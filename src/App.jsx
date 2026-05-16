@@ -1082,6 +1082,52 @@ function OnboardingSheet({ onDismiss }) {
         <span style={{ position: "absolute", bottom: 8,  right: 64, fontSize: 48, lineHeight: 1, color: "var(--color-jasmine)", opacity: 0.06, transform: "rotate(-8deg)", pointerEvents: "none", userSelect: "none" }}>π</span>
         <span style={{ position: "absolute", bottom: 4,  right: 36, fontSize: 56, lineHeight: 1, color: "var(--color-jasmine)", opacity: 0.06, transform: "rotate(5deg)",  pointerEvents: "none", userSelect: "none" }}>√</span>
 
+        {/* Handwritten equation — top-right corner */}
+        <svg
+          width="118" height="96"
+          viewBox="0 0 118 96"
+          style={{ position: "absolute", top: 6, right: 10, opacity: 0.18, pointerEvents: "none", userSelect: "none" }}
+          fill="none" stroke="var(--color-jasmine)" strokeLinecap="round" strokeLinejoin="round"
+        >
+          {/* x² + 1 */}
+          {/* x */}
+          <path d="M6 12 L18 28" strokeWidth="2.2"/>
+          <path d="M18 12 L6 28" strokeWidth="2.2"/>
+          {/* superscript 2 */}
+          <path d="M21 8 Q25 4 29 8 Q29 12 21 17 L29 17" strokeWidth="1.6"/>
+          {/* + */}
+          <path d="M36 18 L44 18" strokeWidth="2.2"/>
+          <path d="M40 14 L40 22" strokeWidth="2.2"/>
+          {/* 1 */}
+          <path d="M51 10 L55 8 L55 28" strokeWidth="2.2"/>
+
+          {/* = */}
+          <path d="M4 42 L60 42" strokeWidth="2"/>
+          <path d="M4 50 L60 50" strokeWidth="2"/>
+
+          {/* 0 */}
+          <path d="M14 62 Q14 58 22 58 Q30 58 30 68 Q30 78 22 78 Q14 78 14 68 Q14 62 14 62" strokeWidth="2.2"/>
+
+          {/* small arrow pointing right, below */}
+          <path d="M42 68 L62 68" strokeWidth="1.8"/>
+          <path d="M56 63 L62 68 L56 73" strokeWidth="1.8"/>
+
+          {/* x = –1/2 stacked, offset right */}
+          {/* x */}
+          <path d="M70 58 L80 70" strokeWidth="2"/>
+          <path d="M80 58 L70 70" strokeWidth="2"/>
+          {/* = */}
+          <path d="M84 62 L110 62" strokeWidth="1.8"/>
+          {/* – (minus, numerator placeholder) */}
+          <path d="M88 55 L100 55" strokeWidth="1.8"/>
+          {/* 1 (numerator) */}
+          <path d="M103 50 L106 48 L106 58" strokeWidth="1.7"/>
+          {/* fraction bar */}
+          <path d="M88 66 L110 66" strokeWidth="1.8"/>
+          {/* 2 (denominator) */}
+          <path d="M93 70 Q97 66 101 70 Q101 74 93 80 L101 80" strokeWidth="1.7"/>
+        </svg>
+
         <div style={{ position: "relative", zIndex: 1 }}>
         {/* Handle */}
         <div style={{
