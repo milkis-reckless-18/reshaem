@@ -1,6 +1,19 @@
 ﻿import { useState, useRef, useCallback, useEffect } from "react"
 import { supabase } from "./lib/supabase"
 
+// Shared AudioContext — created once, reused across all TTS buttons.
+// Calling ctx.resume() synchronously inside a user-gesture handler captures
+// the browser's autoplay permission so source.start() works after async gaps.
+const getAudioCtx = (() => {
+  let ctx = null
+  return () => {
+    if (!ctx || ctx.state === "closed") {
+      ctx = new (window.AudioContext || window.webkitAudioContext)()
+    }
+    return ctx
+  }
+})()
+
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
 const ArrowLeftIcon = () => (
@@ -33,11 +46,28 @@ const SpinnerIcon = ({ size = 20 }) => (
   </svg>
 )
 
-const SpeakerIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+const SpeakerIcon = ({ size = 13 }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
     fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
     <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+  </svg>
+)
+
+const XIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+)
+
+const GalleryIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+    <circle cx="8.5" cy="8.5" r="1.5" />
+    <polyline points="21 15 16 10 5 21" />
   </svg>
 )
 
@@ -75,49 +105,62 @@ function DotLoader({ label }) {
 
 function PlayButton({ text }) {
   const [status, setStatus] = useState("idle")
-  const audioRef = useRef(null)
-  const blobUrlRef = useRef(null)
+  const sourceRef = useRef(null)  // { node: AudioBufferSourceNode, cancel: fn }
+  const bufferRef = useRef(null)  // decoded AudioBuffer
+  const offsetRef = useRef(0)     // pause position in seconds
+  const startRef  = useRef(0)     // ctx.currentTime when playback last began
 
-  useEffect(() => {
-    return () => {
-      audioRef.current?.pause()
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
-    }
+  useEffect(() => () => {
+    sourceRef.current?.cancel()
+    try { sourceRef.current?.node.stop() } catch (_) {}
   }, [])
 
-  const handleClick = async () => {
+  const startNode = (buffer, offset) => {
+    const ctx = getAudioCtx()
+    let cancelled = false
+    const node = ctx.createBufferSource()
+    node.buffer = buffer
+    node.connect(ctx.destination)
+    node.onended = () => {
+      if (!cancelled) { setStatus("idle"); offsetRef.current = 0 }
+    }
+    sourceRef.current = { node, cancel: () => { cancelled = true } }
+    startRef.current = ctx.currentTime
+    node.start(0, offset)
+    setStatus("playing")
+  }
+
+  const handleClick = () => {
+    const ctx = getAudioCtx()
+
     if (status === "playing") {
-      audioRef.current?.pause()
+      const elapsed = ctx.currentTime - startRef.current
+      offsetRef.current = Math.min(offsetRef.current + elapsed, bufferRef.current?.duration ?? 0)
+      sourceRef.current?.cancel()
+      try { sourceRef.current?.node.stop() } catch (_) {}
       setStatus("paused")
       return
     }
     if (status === "paused") {
-      await audioRef.current?.play()
-      setStatus("playing")
+      ctx.resume().then(() => startNode(bufferRef.current, offsetRef.current))
       return
     }
+
+    // ── Mobile fix: resume AudioContext synchronously inside the tap handler.
+    // This captures the browser's autoplay permission so node.start() works
+    // after the async fetch without being blocked.
+    ctx.resume()
     setStatus("loading")
-    try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "tts-1", input: text, voice: "echo" }),
-      })
-      if (!res.ok) throw new Error("TTS error " + res.status)
-      const blob = await res.blob()
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
-      const url = URL.createObjectURL(blob)
-      blobUrlRef.current = url
-      const audio = new Audio(url)
-      audioRef.current = audio
-      audio.onended = () => setStatus("idle")
-      audio.onpause = () => { if (!audio.ended) setStatus("paused") }
-      await audio.play()
-      setStatus("playing")
-    } catch (err) {
-      console.error("TTS failed:", err)
-      setStatus("idle")
-    }
+
+    fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "tts-1", input: text, voice: "echo" }),
+    })
+      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
+      .then(buf => ctx.decodeAudioData(buf))
+      .then(decoded => { bufferRef.current = decoded; offsetRef.current = 0; startNode(decoded, 0) })
+      .catch(err => { console.error("TTS failed:", err); setStatus("idle") })
   }
 
   return (
@@ -154,49 +197,73 @@ function PlayButton({ text }) {
 
 function StepPlayButton({ text, activeColor = "var(--color-jasmine)", inactiveColor = "rgba(250,223,127,0.38)" }) {
   const [status, setStatus] = useState("idle")
-  const audioRef   = useRef(null)
-  const blobUrlRef = useRef(null)
+  const sourceRef = useRef(null)
+  const bufferRef = useRef(null)
+  const offsetRef = useRef(0)
+  const startRef  = useRef(0)
 
   useEffect(() => () => {
-    audioRef.current?.pause()
-    if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
+    sourceRef.current?.cancel()
+    try { sourceRef.current?.node.stop() } catch (_) {}
   }, [])
 
-  const handleClick = async () => {
-    if (status === "playing") { audioRef.current?.pause(); setStatus("paused"); return }
-    if (status === "paused")  { await audioRef.current?.play(); setStatus("playing"); return }
-    setStatus("loading")
-    try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "tts-1", input: text, voice: "echo" }),
-      })
-      if (!res.ok) throw new Error("TTS " + res.status)
-      const blob = await res.blob()
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
-      const url = URL.createObjectURL(blob)
-      blobUrlRef.current = url
-      const audio = new Audio(url)
-      audioRef.current = audio
-      audio.onended = () => setStatus("idle")
-      audio.onpause = () => { if (!audio.ended) setStatus("paused") }
-      await audio.play()
-      setStatus("playing")
-    } catch (err) {
-      console.error("TTS failed:", err)
-      setStatus("idle")
+  const startNode = (buffer, offset) => {
+    const ctx = getAudioCtx()
+    let cancelled = false
+    const node = ctx.createBufferSource()
+    node.buffer = buffer
+    node.connect(ctx.destination)
+    node.onended = () => {
+      if (!cancelled) { setStatus("idle"); offsetRef.current = 0 }
     }
+    sourceRef.current = { node, cancel: () => { cancelled = true } }
+    startRef.current = ctx.currentTime
+    node.start(0, offset)
+    setStatus("playing")
+  }
+
+  const handleClick = () => {
+    const ctx = getAudioCtx()
+
+    if (status === "playing") {
+      const elapsed = ctx.currentTime - startRef.current
+      offsetRef.current = Math.min(offsetRef.current + elapsed, bufferRef.current?.duration ?? 0)
+      sourceRef.current?.cancel()
+      try { sourceRef.current?.node.stop() } catch (_) {}
+      setStatus("paused")
+      return
+    }
+    if (status === "paused") {
+      ctx.resume().then(() => startNode(bufferRef.current, offsetRef.current))
+      return
+    }
+
+    ctx.resume() // synchronous gesture capture — same fix as PlayButton
+    setStatus("loading")
+
+    fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "tts-1", input: text, voice: "echo" }),
+    })
+      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
+      .then(buf => ctx.decodeAudioData(buf))
+      .then(decoded => { bufferRef.current = decoded; offsetRef.current = 0; startNode(decoded, 0) })
+      .catch(err => { console.error("TTS failed:", err); setStatus("idle") })
   }
 
   return (
     <button onClick={handleClick} style={{
-      background: "none", border: "none", padding: 3, cursor: "pointer",
-      color: status === "playing" ? activeColor : inactiveColor,
+      width: 48, height: 48,
+      borderRadius: "var(--radius-full)",
+      background: "rgba(250,223,127,0.15)",
+      border: "none",
       display: "flex", alignItems: "center", justifyContent: "center",
-      transition: "color 0.15s ease", flexShrink: 0,
+      cursor: "pointer", flexShrink: 0, padding: 0,
+      color: status === "playing" ? activeColor : inactiveColor,
+      transition: "color 0.15s ease",
     }}>
-      {status === "loading" ? <SpinnerIcon size={13} /> : <SpeakerIcon />}
+      {status === "loading" ? <SpinnerIcon size={16} /> : <SpeakerIcon size={18} />}
     </button>
   )
 }
@@ -334,7 +401,7 @@ function MathBackground() {
 
 // ─── Camera Screen ────────────────────────────────────────────────────────────
 
-function CameraScreen({ onUpload, history, historyLoading }) {
+function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
   const cameraInputRef  = useRef(null)
   const galleryInputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
@@ -407,6 +474,7 @@ function CameraScreen({ onUpload, history, historyLoading }) {
 
         {/* Viewfinder */}
         <div
+          onClick={() => cameraInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
@@ -427,6 +495,7 @@ function CameraScreen({ onUpload, history, historyLoading }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            cursor: "pointer",
           }}
         >
           {/* Corner brackets */}
@@ -466,10 +535,33 @@ function CameraScreen({ onUpload, history, historyLoading }) {
               или перетащи файл сюда
             </p>
           </div>
+
+          {/* Gallery icon button — bottom right */}
+          <button
+            onClick={(e) => { e.stopPropagation(); galleryInputRef.current?.click() }}
+            style={{
+              position: "absolute", bottom: 14, right: 14,
+              width: 40, height: 40,
+              borderRadius: "var(--radius-md)",
+              background: "rgba(42,35,32,0.82)",
+              border: "1px solid var(--color-border-strong)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--color-fawn)",
+              cursor: "pointer",
+              padding: 0,
+              zIndex: 2,
+              backdropFilter: "blur(6px)",
+              transition: "background 0.18s ease",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(61,53,48,0.9)"}
+            onMouseLeave={e => e.currentTarget.style.background = "rgba(42,35,32,0.82)"}
+          >
+            <GalleryIcon />
+          </button>
         </div>
 
         {/* History */}
-        <div style={{ marginTop: 28, paddingBottom: 120 }}>
+        <div style={{ marginTop: 28, paddingBottom: 40 }}>
           <p style={{
             fontFamily: "var(--font-body)",
             fontSize: "var(--text-xs)",
@@ -495,14 +587,22 @@ function CameraScreen({ onUpload, history, historyLoading }) {
               </p>
             ) : (
               history.map(item => (
-                <div key={item.id} style={{
-                  flexShrink: 0,
-                  width: 60, height: 60,
-                  borderRadius: "var(--radius-md)",
-                  overflow: "hidden",
-                  border: "1px solid var(--color-border)",
-                  background: "var(--color-surface)",
-                }}>
+                <div
+                  key={item.id}
+                  onClick={() => onSelectSession(item)}
+                  style={{
+                    flexShrink: 0,
+                    width: 60, height: 60,
+                    borderRadius: "var(--radius-md)",
+                    overflow: "hidden",
+                    border: "1px solid var(--color-border)",
+                    background: "var(--color-surface)",
+                    cursor: "pointer",
+                    transition: "border-color 0.18s ease",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = "var(--color-border-strong)"}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = "var(--color-border)"}
+                >
                   <img src={item.image_url} alt=""
                     style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
@@ -512,60 +612,326 @@ function CameraScreen({ onUpload, history, historyLoading }) {
         </div>
       </div>
 
-      {/* Bottom CTA */}
-      <div style={{
-        position: "absolute", bottom: 0, left: 0, right: 0,
-        padding: "12px var(--screen-px) 36px",
-        background: "linear-gradient(to top, var(--color-bg) 60%, transparent 100%)",
-        display: "flex", gap: 10,
-      }}>
-        <button
-          className="camera-only"
-          onClick={() => cameraInputRef.current?.click()}
-          style={{
-            flex: 1, alignItems: "center", justifyContent: "center",
-            background: "transparent",
-            color: "var(--color-text-primary)",
-            border: "1.5px solid var(--color-border-strong)",
-            borderRadius: "var(--radius-lg)",
-            padding: "14px var(--space-4)",
-            fontFamily: "var(--font-display)",
-            fontSize: 15,
-            fontWeight: 600,
-            letterSpacing: "-0.01em",
-            cursor: "pointer",
-            transition: "border-color 0.18s ease, background 0.18s ease",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--color-jasmine)"; e.currentTarget.style.background = "var(--color-jasmine-dim)" }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--color-border-strong)"; e.currentTarget.style.background = "transparent" }}
-          onMouseDown={e => { e.currentTarget.style.background = "rgba(250,223,127,0.08)" }}
-        >
-          Сфотографировать
-        </button>
-        <button
-          onClick={() => galleryInputRef.current?.click()}
-          style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-            background: "transparent",
-            color: "var(--color-text-primary)",
-            border: "1.5px solid var(--color-border-strong)",
-            borderRadius: "var(--radius-lg)",
-            padding: "14px var(--space-4)",
-            fontFamily: "var(--font-display)",
-            fontSize: 15,
-            fontWeight: 600,
-            letterSpacing: "-0.01em",
-            cursor: "pointer",
-            transition: "border-color 0.18s ease, background 0.18s ease",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--color-jasmine)"; e.currentTarget.style.background = "var(--color-jasmine-dim)" }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--color-border-strong)"; e.currentTarget.style.background = "transparent" }}
-          onMouseDown={e => { e.currentTarget.style.background = "rgba(250,223,127,0.08)" }}
-        >
-          Выбрать из галереи
-        </button>
-      </div>
     </div>
+  )
+}
+
+// ─── Session Detail Sheet ─────────────────────────────────────────────────────
+
+function SessionSheet({ session, onClose }) {
+  const [visible, setVisible] = useState(false)
+  const [detail, setDetail]   = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 16)
+    return () => clearTimeout(t)
+  }, [])
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const { data } = await supabase
+        .from("sessions")
+        .select("id, image_url, explanation, topic, is_correct, nudge_question, created_at")
+        .eq("id", session.id)
+        .single()
+      if (data) setDetail(data)
+      setLoading(false)
+    }
+    load()
+  }, [session.id])
+
+  const handleClose = () => {
+    setVisible(false)
+    setTimeout(onClose, 350)
+  }
+
+  const isCorrect = detail?.is_correct === true
+  const isWrong   = detail?.is_correct === false
+
+  return (
+    <>
+      <div onClick={handleClose} style={{
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,0.6)",
+        zIndex: 60,
+        opacity: visible ? 1 : 0,
+        transition: "opacity 0.3s ease",
+      }} />
+
+      <div style={{
+        position: "fixed",
+        bottom: 0, left: "50%",
+        transform: `translateX(-50%) translateY(${visible ? "0" : "105%"})`,
+        width: "100%", maxWidth: 480,
+        background: "var(--color-surface)",
+        borderRadius: "var(--radius-3xl) var(--radius-3xl) 0 0",
+        borderTop: "1px solid var(--color-border)",
+        padding: "10px var(--screen-px) 48px",
+        zIndex: 61,
+        transition: "transform 0.42s cubic-bezier(0.32, 0.72, 0, 1)",
+        maxHeight: "85vh",
+        overflowY: "auto",
+      }}>
+        {/* Handle */}
+        <div style={{ width: 34, height: 4, background: "rgba(217,178,111,0.2)", borderRadius: 4, margin: "0 auto 20px" }} />
+
+        {/* Close button */}
+        <button onClick={handleClose} style={{
+          position: "absolute", top: 18, right: 18,
+          width: 32, height: 32,
+          background: "var(--color-surface-2)",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius-md)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "var(--color-text-dim)",
+          cursor: "pointer", padding: 0,
+          transition: "background 0.18s",
+        }}>
+          <XIcon />
+        </button>
+
+        {loading ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: "32px 0" }}>
+            <DotLoader label="Загружаю..." />
+          </div>
+        ) : detail ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Thumbnail + topic + verdict */}
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 4 }}>
+              {detail.image_url && (
+                <div style={{ width: 52, height: 52, borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--color-border)", flexShrink: 0 }}>
+                  <img src={detail.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                </div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {detail.topic && (
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-rose-light)", marginBottom: 3 }}>
+                    {detail.topic}
+                  </div>
+                )}
+                <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", fontWeight: 700, letterSpacing: "var(--tracking-tight)", color: isCorrect ? "var(--color-correct)" : isWrong ? "var(--color-error)" : "var(--color-text-primary)" }}>
+                  {isCorrect ? "Верное решение" : isWrong ? "Найдена ошибка" : "Анализ"}
+                </div>
+              </div>
+            </div>
+
+            {/* Explanation */}
+            {detail.explanation ? (
+              <div style={{ background: isCorrect ? "var(--color-correct-bg)" : "var(--color-surface-2)", border: `1px solid ${isCorrect ? "var(--color-correct-border)" : "var(--color-border)"}`, borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: isCorrect ? "var(--color-correct)" : isWrong ? "var(--color-error)" : "var(--color-fawn)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
+                <div style={{ paddingLeft: 14 }}>
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: isCorrect ? "var(--color-correct)" : isWrong ? "var(--color-error)" : "var(--color-fawn)", marginBottom: 8 }}>
+                    {isCorrect ? "✓ Верно" : isWrong ? "✗ Есть ошибка" : "Комментарий"}
+                  </div>
+                  <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-loose)" }}>
+                    {detail.explanation}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-ghost)", textAlign: "center", padding: "12px 0", margin: 0 }}>
+                Разбор недоступен
+              </p>
+            )}
+
+            {/* Nudge question */}
+            {detail.nudge_question && (
+              <div style={{ background: "var(--color-jasmine-dim)", border: "1px solid rgba(250,223,127,0.18)", borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: "var(--color-jasmine)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
+                <div style={{ paddingLeft: 14 }}>
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-sand)", marginBottom: 8 }}>
+                    Подумай
+                  </div>
+                  <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-vanilla)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
+                    {detail.nudge_question}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-ghost)", textAlign: "center", padding: "20px 0", margin: 0 }}>
+            Не удалось загрузить
+          </p>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ─── Topic Problems ───────────────────────────────────────────────────────────
+
+const TOPIC_PROBLEMS = {
+  "Уравнения":        "Решите уравнение: 2x² - 5x + 3 = 0",
+  "Алгебра":          "Упростите выражение: (a+b)² - (a-b)²",
+  "Геометрия":        "В прямоугольном треугольнике катеты равны 3 и 4. Найдите гипотенузу.",
+  "Тригонометрия":    "Решите уравнение: sin(x) = √2/2 на отрезке [0; 2π]",
+  "Производная":      "Найдите производную функции: f(x) = x³ - 3x² + 2x",
+  "Интеграл":         "Вычислите интеграл: ∫(2x + 1)dx",
+  "Вероятность":      "В урне 3 белых и 5 чёрных шаров. Какова вероятность извлечь белый?",
+  "Неравенства":      "Решите неравенство: x² - 4x - 5 > 0",
+  "Функции":          "Найдите область определения функции: f(x) = √(4 - x²)",
+  "Числа":            "Найдите НОД чисел 48 и 36",
+  "Статистика":       "Найдите среднее арифметическое: 4, 7, 2, 9, 3",
+  "Текстовая задача": "Поезд прошёл 240 км за 3 часа. Найдите его среднюю скорость.",
+}
+
+// ─── Practice Sheet ───────────────────────────────────────────────────────────
+
+function PracticeSheet({ topic, onUpload, onClose }) {
+  const [visible, setVisible]   = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const cameraRef  = useRef(null)
+  const galleryRef = useRef(null)
+
+  const problem = TOPIC_PROBLEMS[topic] ?? "Реши задачу по этой теме"
+
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 16)
+    return () => clearTimeout(t)
+  }, [])
+
+  const handleClose = () => {
+    setVisible(false)
+    setTimeout(onClose, 350)
+  }
+
+  const handleFile = (file) => {
+    if (!file || !file.type.startsWith("image/")) return
+    setVisible(false)
+    onUpload(file)
+  }
+
+  const handleChange = (e) => { handleFile(e.target.files[0]); e.target.value = "" }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragging(false)
+    handleFile(e.dataTransfer.files[0])
+  }
+
+  const brackets = [
+    { top: 14,    left: 14,  borderWidth: "2px 0 0 2px", borderRadius: "4px 0 0 0" },
+    { top: 14,    right: 14, borderWidth: "2px 2px 0 0", borderRadius: "0 4px 0 0" },
+    { bottom: 14, left: 14,  borderWidth: "0 0 2px 2px", borderRadius: "0 0 0 4px" },
+    { bottom: 14, right: 14, borderWidth: "0 2px 2px 0", borderRadius: "0 0 4px 0" },
+  ]
+
+  return (
+    <>
+      <div onClick={handleClose} style={{
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,0.6)",
+        zIndex: 60,
+        opacity: visible ? 1 : 0,
+        transition: "opacity 0.3s ease",
+      }} />
+
+      <div style={{
+        position: "fixed",
+        bottom: 0, left: "50%",
+        transform: `translateX(-50%) translateY(${visible ? "0" : "105%"})`,
+        width: "100%", maxWidth: 480,
+        background: "var(--color-surface)",
+        borderRadius: "var(--radius-3xl) var(--radius-3xl) 0 0",
+        borderTop: "1px solid var(--color-border)",
+        padding: "10px var(--screen-px) 52px",
+        zIndex: 61,
+        transition: "transform 0.42s cubic-bezier(0.32, 0.72, 0, 1)",
+        overflowY: "auto",
+        maxHeight: "90vh",
+      }}>
+        {/* Handle */}
+        <div style={{ width: 34, height: 4, background: "rgba(217,178,111,0.2)", borderRadius: 4, margin: "0 auto 20px" }} />
+
+        {/* Close */}
+        <button onClick={handleClose} style={{
+          position: "absolute", top: 18, right: 18,
+          width: 32, height: 32,
+          background: "var(--color-surface-2)",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius-md)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "var(--color-text-dim)",
+          cursor: "pointer", padding: 0,
+        }}>
+          <XIcon />
+        </button>
+
+        {/* Eyebrow */}
+        <div style={{
+          fontSize: "var(--text-xs)", fontWeight: 700,
+          letterSpacing: "0.08em", textTransform: "uppercase",
+          color: "var(--color-rose-light)", marginBottom: 8,
+        }}>
+          {topic} · Похожая задача
+        </div>
+
+        {/* Problem text */}
+        <p style={{
+          fontFamily: "var(--font-body)", fontStyle: "italic",
+          fontSize: "var(--text-md)", fontWeight: 500,
+          color: "var(--color-text-primary)",
+          lineHeight: "var(--leading-normal)",
+          margin: "0 0 20px",
+        }}>
+          {problem}
+        </p>
+
+        {/* Hidden inputs */}
+        <input ref={cameraRef}  type="file" accept="image/*" capture="environment"
+          onChange={handleChange} style={{ display: "none" }} />
+        <input ref={galleryRef} type="file" accept="image/*"
+          onChange={handleChange} style={{ display: "none" }} />
+
+        {/* Viewfinder */}
+        <div
+          onClick={() => cameraRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          style={{
+            width: "100%", minHeight: 200,
+            borderRadius: "var(--radius-2xl)",
+            background: "#0C0A09",
+            position: "relative", overflow: "hidden",
+            border: dragging ? "1.5px solid var(--color-jasmine)" : "1px solid var(--color-border)",
+            transition: "border-color 0.18s ease",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          {brackets.map((s, i) => (
+            <div key={i} style={{ position: "absolute", width: 20, height: 20, borderColor: "var(--color-jasmine)", borderStyle: "solid", opacity: 0.7, ...s }} />
+          ))}
+          <div className="viewfinder__scan" />
+          <div style={{ textAlign: "center", position: "relative", zIndex: 1, padding: "0 24px" }}>
+            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-dim)", margin: "0 0 4px", lineHeight: "var(--leading-normal)" }}>
+              Реши задачу и сфотографируй
+            </p>
+            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)", color: "var(--color-text-ghost)", margin: 0, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+              или перетащи файл
+            </p>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); galleryRef.current?.click() }}
+            style={{
+              position: "absolute", bottom: 12, right: 12,
+              width: 36, height: 36,
+              borderRadius: "var(--radius-md)",
+              background: "rgba(42,35,32,0.82)",
+              border: "1px solid var(--color-border-strong)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--color-fawn)", cursor: "pointer", padding: 0, zIndex: 2,
+            }}
+          >
+            <GalleryIcon />
+          </button>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -575,13 +941,14 @@ const POSITIVE_LABELS = ["Ясно", "Гуд", "Принято", "ОК", "Дал
 const NEGATIVE_LABELS = ["Не ясно", "Не понятно", "Объясни"]
 const pickRandom = arr => arr[Math.floor(Math.random() * arr.length)]
 
-function AnalysisScreen({ state, maxResponse, thumbnail, onReset }) {
+function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
   const [stepIndex, setStepIndex]       = useState(0)
   const [isRethinking, setIsRethinking] = useState(false)
   const [stepsDone, setStepsDone]       = useState(false)
   const [posLabel, setPosLabel]         = useState(() => pickRandom(POSITIVE_LABELS))
   const [negLabel, setNegLabel]         = useState(() => pickRandom(NEGATIVE_LABELS))
   const [localSteps, setLocalSteps]     = useState([])
+  const [showPractice, setShowPractice] = useState(false)
 
   useEffect(() => {
     if (maxResponse) {
@@ -788,6 +1155,21 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset }) {
                   <StepCard key={step.step_number} step={step} index={i} />
                 ))}
 
+                {/* Nudge question — shown during step flow once an error is revealed */}
+                {!stepsDone && maxResponse.nudge_question && localSteps.slice(0, stepIndex + 1).some(s => s.is_correct === false) && (
+                  <div style={{ background: "var(--color-jasmine-dim)", border: "1px solid rgba(250,223,127,0.18)", borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden", animation: "fadeUp 0.3s 0.1s ease both" }}>
+                    <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: "var(--color-jasmine)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
+                    <div style={{ paddingLeft: 14 }}>
+                      <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-sand)", marginBottom: 8 }}>
+                        Подумай
+                      </div>
+                      <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-vanilla)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
+                        {maxResponse.nudge_question}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Per-step action buttons */}
                 {!stepsDone && (
                   isRethinking ? (
@@ -902,6 +1284,48 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset }) {
                           : "Исправь эту ошибку → +5 баллов на экзамене"}
                       </p>
                     </div>
+
+                    {/* Post-verdict actions */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "fadeUp 0.35s 0.22s ease both" }}>
+                      {maxResponse.topic && TOPIC_PROBLEMS[maxResponse.topic] && (
+                        <button
+                          onClick={() => setShowPractice(true)}
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            width: "100%",
+                            background: "var(--color-jasmine)",
+                            color: "var(--color-bg)",
+                            border: "none",
+                            borderRadius: "var(--radius-lg)",
+                            padding: "15px var(--space-6)",
+                            fontFamily: "var(--font-display)",
+                            fontSize: 16, fontWeight: 700,
+                            letterSpacing: "-0.01em",
+                            cursor: "pointer",
+                            boxShadow: "0 4px 24px rgba(250,223,127,0.2)",
+                          }}
+                        >
+                          Ещё такие задачи →
+                        </button>
+                      )}
+                      <button
+                        onClick={onReset}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          width: "100%",
+                          background: "transparent",
+                          color: "var(--color-text-dim)",
+                          border: "none",
+                          padding: "10px var(--space-4)",
+                          fontFamily: "var(--font-body)",
+                          fontSize: "var(--text-base)", fontWeight: 600,
+                          cursor: "pointer",
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        На главную
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
@@ -948,51 +1372,20 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset }) {
               </div>
             )}
 
-            {/* Nudge question card — show after all steps or when no steps */}
-            {(stepsDone || !localSteps.length) && maxResponse.nudge_question && (
-              <div className="stagger-2" style={{
-                background: "var(--color-jasmine-dim)",
-                border: "1px solid rgba(250,223,127,0.18)",
-                borderRadius: "var(--radius-xl)",
-                padding: "var(--space-5)",
-                position: "relative",
-                overflow: "hidden",
-              }}>
-                <div style={{
-                  position: "absolute", top: 0, left: 0, bottom: 0,
-                  width: 3, background: "var(--color-jasmine)",
-                  borderRadius: "3px 0 0 3px", opacity: 0.75,
-                }} />
-                <div style={{ paddingLeft: 14 }}>
-                  <div style={{
-                    fontSize: "var(--text-xs)",
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                    color: "var(--color-sand)",
-                    marginBottom: 10,
-                  }}>
-                    Подумай
-                  </div>
-                  <p style={{
-                    fontFamily: "var(--font-body)",
-                    fontSize: "var(--text-md)",
-                    color: "var(--color-vanilla)",
-                    margin: 0,
-                    lineHeight: "var(--leading-normal)",
-                    fontWeight: 500,
-                  }}>
-                    {maxResponse.nudge_question}
-                  </p>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
 
-      {/* Bottom action */}
-      {(state === "done" || state === "ocr_uncertain") && (
+      {showPractice && (
+        <PracticeSheet
+          topic={maxResponse?.topic ?? ""}
+          onUpload={onUpload}
+          onClose={() => setShowPractice(false)}
+        />
+      )}
+
+      {/* Bottom action — only for error/uncertain states */}
+      {state === "ocr_uncertain" && (
         <div className="stagger-3" style={{
           position: "absolute", bottom: 0, left: 0, right: 0,
           padding: "12px var(--screen-px) 36px",
@@ -1018,7 +1411,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset }) {
               transition: "background 0.18s ease",
             }}
           >
-            Новое решение
+            На главную
           </button>
         </div>
       )}
@@ -1247,6 +1640,7 @@ export default function App() {
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [selectedSession, setSelectedSession] = useState(null)
 
   useEffect(() => {
     const isDemo = new URLSearchParams(window.location.search).get("demo") === "true"
@@ -1384,15 +1778,18 @@ export default function App() {
           maxResponse={maxResponse}
           thumbnail={thumbnail}
           onReset={resetSession}
+          onUpload={handleUpload}
         />
       ) : (
         <CameraScreen
           onUpload={handleUpload}
           history={history}
           historyLoading={historyLoading}
+          onSelectSession={setSelectedSession}
         />
       )}
       {showOnboarding && <OnboardingSheet onDismiss={dismissOnboarding} />}
+      {selectedSession && <SessionSheet session={selectedSession} onClose={() => setSelectedSession(null)} />}
     </>
   )
 }
