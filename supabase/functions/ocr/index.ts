@@ -11,6 +11,9 @@ Deno.serve(async (req) => {
   try {
     const { image } = await req.json()
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10000)
+
     const mathpixRes = await fetch('https://api.mathpix.com/v3/text', {
       method: 'POST',
       headers: {
@@ -23,7 +26,17 @@ Deno.serve(async (req) => {
         formats: ['latex_styled'],
         data_options: { include_svg: false },
       }),
+      signal: controller.signal,
     })
+
+    clearTimeout(timeout)
+
+    if (!mathpixRes.ok) {
+      return new Response(
+        JSON.stringify({ error: 'OCR failed', confidence_flag: 'ocr_uncertain' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      )
+    }
 
     const data = await mathpixRes.json()
 
