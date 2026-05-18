@@ -3,6 +3,8 @@ import { renderToString } from "katex"
 import { supabase } from "./lib/supabase"
 import reshaemLogo from "./assets/reshaem-logo.svg"
 
+const API_URL = import.meta.env.VITE_API_URL || ""
+
 // Preprocess math notation into speakable Russian before sending to TTS.
 function preprocessForTTS(text) {
   const ordinals = { '2': 'второй', '3': 'третьей', '4': 'четвёртой' }
@@ -203,10 +205,10 @@ function PlayButton({ text }) {
     ctx.resume()
     setStatus("loading")
 
-    fetch("/api/tts", {
+    fetch(`${API_URL}/speak`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "tts-1", input: preprocessForTTS(text), voice: "echo" }),
+      body: JSON.stringify({ text }),
     })
       .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
       .then(buf => ctx.decodeAudioData(buf))
@@ -292,10 +294,10 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
     ctx.resume() // synchronous gesture capture — same fix as PlayButton
     setStatus("loading")
 
-    fetch("/api/tts", {
+    fetch(`${API_URL}/speak`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "tts-1", input: preprocessForTTS(text), voice: "echo" }),
+      body: JSON.stringify({ text }),
     })
       .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
       .then(buf => ctx.decodeAudioData(buf))
@@ -496,7 +498,9 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
   useEffect(() => { onUploadRef.current = onUpload }, [onUpload])
 
   const handleFile = useCallback((file) => {
-    if (!file || !file.type.startsWith("image/")) return
+    if (!file) return
+    // file.type can be empty on some iOS cameras — accept it; the input's accept="image/*" already filters
+    if (file.type && !file.type.startsWith("image/")) return
     onUploadRef.current(file)
   }, [])
 
@@ -1035,10 +1039,12 @@ const TOPIC_PROBLEMS = {
 function PracticeSheet({ topic, onUpload, onClose }) {
   const [visible, setVisible]   = useState(false)
   const [dragging, setDragging] = useState(false)
-  const cameraRef  = useRef(null)
-  const galleryRef = useRef(null)
+  const cameraRef   = useRef(null)
+  const galleryRef  = useRef(null)
   const onUploadRef = useRef(onUpload)
+  const onCloseRef  = useRef(onClose)
   useEffect(() => { onUploadRef.current = onUpload }, [onUpload])
+  useEffect(() => { onCloseRef.current  = onClose  }, [onClose])
 
   const problem = TOPIC_PROBLEMS[topic] ?? "Реши задачу по этой теме"
 
@@ -1049,12 +1055,14 @@ function PracticeSheet({ topic, onUpload, onClose }) {
 
   const handleClose = () => {
     setVisible(false)
-    setTimeout(onClose, 350)
+    setTimeout(() => onCloseRef.current(), 350)
   }
 
   const handleFile = useCallback((file) => {
-    if (!file || !file.type.startsWith("image/")) return
+    if (!file) return
+    if (file.type && !file.type.startsWith("image/")) return
     setVisible(false)
+    setTimeout(() => onCloseRef.current(), 350)
     onUploadRef.current(file)
   }, [])
 
@@ -1100,6 +1108,7 @@ function PracticeSheet({ topic, onUpload, onClose }) {
         background: "rgba(0,0,0,0.6)",
         zIndex: 60,
         opacity: visible ? 1 : 0,
+        pointerEvents: visible ? "auto" : "none",
         transition: "opacity 0.3s ease",
       }} />
 
@@ -1250,10 +1259,13 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
     setIsRethinking(true)
     try {
       const currentExplanation = localSteps[stepIndex]?.explanation ?? ""
-      const { data, error } = await supabase.functions.invoke("explain", {
-        body: { rephrase: currentExplanation },
+      const rephraseRes = await fetch(`${API_URL}/explain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rephrase: currentExplanation }),
       })
-      if (!error && data?.rephrased) {
+      const data = rephraseRes.ok ? await rephraseRes.json() : null
+      if (data?.rephrased) {
         setLocalSteps(prev => prev.map((s, i) =>
           i === stepIndex ? { ...s, explanation: data.rephrased } : s
         ))
@@ -2125,14 +2137,15 @@ export default function App() {
       }
 
       // Fire OCR immediately — don't wait for session insert
-      const [ocrResult, insertedRow] = await Promise.all([
-        supabase.functions.invoke("ocr", { body: { image: imageBase64 } }),
+      const [ocrData, insertedRow] = await Promise.all([
+        fetch(`${API_URL}/ocr`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: imageBase64 }),
+        }).then(r => r.json()),
         sessionInsertPromise,
       ])
       sessionRow = insertedRow
-
-      const { data: ocrData, error: ocrError } = ocrResult
-      if (ocrError) throw ocrError
 
       const { latex, confidence_flag } = ocrData
 
@@ -2146,10 +2159,14 @@ export default function App() {
 
       setExplanationState("ocr_done")
 
-      const { data: explainData, error: explainError } = await supabase.functions.invoke("explain", {
-        body: { latex, confidence_flag },
+      const explainRes = await fetch(`${API_URL}/explain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ latex, confidence_flag }),
       })
-      if (explainError) throw explainError
+      if (!explainRes.ok) throw new Error("Explain request failed")
+      const explainData = await explainRes.json()
+      if (!explainData || typeof explainData !== "object") throw new Error("Empty explain response")
 
       // Fire-and-forget — DB persistence doesn't block the user
       // Store full JSON so history can render step-by-step cards
