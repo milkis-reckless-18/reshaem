@@ -1,6 +1,24 @@
 ﻿import { useState, useRef, useCallback, useEffect } from "react"
+import { renderToString } from "katex"
 import { supabase } from "./lib/supabase"
 import reshaemLogo from "./assets/reshaem-logo.svg"
+
+// Preprocess math notation into speakable Russian before sending to TTS.
+function preprocessForTTS(text) {
+  const ordinals = { '2': 'второй', '3': 'третьей', '4': 'четвёртой' }
+  return text
+    .replace(/1\/2/g, 'одна вторая')
+    .replace(/1\/4/g, 'одна четвёртая')
+    .replace(/1\/3/g, 'одна третья')
+    .replace(/3\/2/g, 'три вторых')
+    .replace(/2\/4/g, 'две четвёртых')
+    .replace(/x\^(\d+)/g, (_, n) => `икс во ${ordinals[n] ?? n} степени`)
+    .replace(/x\^\(([^)]+)\)/g, (_, c) => `икс в степени ${c}`)
+    .replace(/sqrt\(/g, 'корень из ')
+    .replace(/=>/g, 'следовательно')
+    .replace(/>=/g, 'больше или равно')
+    .replace(/<=/g, 'меньше или равно')
+}
 
 // Shared AudioContext — created once, reused across all TTS buttons.
 // Calling ctx.resume() synchronously inside a user-gesture handler captures
@@ -156,7 +174,7 @@ function PlayButton({ text }) {
     fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "tts-1", input: text, voice: "echo" }),
+      body: JSON.stringify({ model: "tts-1", input: preprocessForTTS(text), voice: "echo" }),
     })
       .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
       .then(buf => ctx.decodeAudioData(buf))
@@ -245,7 +263,7 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
     fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "tts-1", input: text, voice: "echo" }),
+      body: JSON.stringify({ model: "tts-1", input: preprocessForTTS(text), voice: "echo" }),
     })
       .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
       .then(buf => ctx.decodeAudioData(buf))
@@ -270,6 +288,23 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
 }
 
 // ─── Step Card ────────────────────────────────────────────────────────────────
+
+// ─── KaTeX Math Renderer ──────────────────────────────────────────────────────
+
+function hasMath(text) {
+  return text && /[\\^]|sqrt|frac|=/.test(text)
+}
+
+function MathField({ text, style }) {
+  if (!text) return null
+  if (!hasMath(text)) return <span style={style}>{text}</span>
+  try {
+    const html = renderToString(text, { displayMode: false, throwOnError: false, output: "html" })
+    return <span style={style} dangerouslySetInnerHTML={{ __html: html }} />
+  } catch {
+    return <span style={style}>{text}</span>
+  }
+}
 
 function StepCard({ step, index }) {
   const isCorrect = step.is_correct === true
@@ -319,17 +354,19 @@ function StepCard({ step, index }) {
           lineHeight: "var(--leading-tight)",
           marginBottom: step.explanation ? 6 : 0,
         }}>
-          <span style={{
-            color: isError ? "var(--color-error)" : "var(--color-text-primary)",
-            textDecoration: isError ? "line-through" : "none",
-            textDecorationColor: "rgba(201,123,106,0.5)",
-          }}>
-            {step.student_work}
-          </span>
+          <MathField
+            text={step.student_work}
+            style={{
+              color: isError ? "var(--color-error)" : "var(--color-text-primary)",
+              textDecoration: isError ? "line-through" : "none",
+              textDecorationColor: "rgba(201,123,106,0.5)",
+            }}
+          />
           {isError && step.correction && (
-            <span style={{ color: "var(--color-accent)", marginLeft: 8 }}>
-              {step.correction}
-            </span>
+            <MathField
+              text={step.correction}
+              style={{ color: "var(--color-accent)", marginLeft: 8 }}
+            />
           )}
         </div>
 
@@ -1303,27 +1340,52 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                     </div>
 
                     {/* Score predictor */}
-                    <div style={{
-                      background: "var(--color-accent-tint)",
-                      border: "1px solid rgba(250,223,127,0.2)",
-                      borderRadius: "var(--radius-xl)",
-                      padding: "var(--space-5)",
-                      animation: "fadeUp 0.35s 0.12s ease both",
-                      textAlign: "center",
-                    }}>
-                      <p style={{
-                        fontFamily: "var(--font-body)",
-                        fontSize: "var(--text-base)",
-                        fontWeight: 600,
-                        color: isCorrect ? "var(--color-accent)" : "var(--color-accent)",
-                        margin: 0,
-                        lineHeight: "var(--leading-normal)",
+                    {isCorrect ? (
+                      <div style={{
+                        background: "var(--color-accent-tint)",
+                        border: "1px solid rgba(250,223,127,0.2)",
+                        borderRadius: "var(--radius-xl)",
+                        padding: "var(--space-5)",
+                        animation: "fadeUp 0.35s 0.12s ease both",
+                        textAlign: "center",
                       }}>
-                        {isCorrect
-                          ? "Прогноз: +3 балла к твоему результату 🎯"
-                          : "Исправь эту ошибку → +5 баллов на экзамене"}
-                      </p>
-                    </div>
+                        <p style={{
+                          fontFamily: "var(--font-body)",
+                          fontSize: "var(--text-base)",
+                          fontWeight: 600,
+                          color: "var(--color-accent)",
+                          margin: 0,
+                          lineHeight: "var(--leading-normal)",
+                        }}>
+                          Прогноз: +3 балла к твоему результату 🎯
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={onReset}
+                        style={{
+                          background: "var(--color-accent-tint)",
+                          border: "1px solid rgba(250,223,127,0.2)",
+                          borderRadius: "var(--radius-xl)",
+                          padding: "var(--space-5)",
+                          animation: "fadeUp 0.35s 0.12s ease both",
+                          textAlign: "center",
+                          width: "100%",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <p style={{
+                          fontFamily: "var(--font-body)",
+                          fontSize: "var(--text-base)",
+                          fontWeight: 600,
+                          color: "var(--color-accent)",
+                          margin: 0,
+                          lineHeight: "var(--leading-normal)",
+                        }}>
+                          Исправь эту ошибку → +5 баллов на экзамене
+                        </p>
+                      </button>
+                    )}
 
                     {/* Post-verdict actions */}
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "fadeUp 0.35s 0.22s ease both" }}>
@@ -1709,7 +1771,7 @@ export default function App() {
 
     try {
       // Resize to max 1200px → base64 (for OCR) + blob (for Storage)
-      const { blob, base64 } = await new Promise((resolve, reject) => {
+      const { blob, imageBase64 } = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onerror = reject
         reader.onload = () => {
@@ -1722,10 +1784,11 @@ export default function App() {
             canvas.width  = Math.round(img.width  * scale)
             canvas.height = Math.round(img.height * scale)
             canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height)
-            const base64 = canvas.toDataURL("image/jpeg", 0.92)
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.92)
+            const imageBase64 = dataUrl.split(',')[1]
             canvas.toBlob(blob => {
               if (!blob) reject(new Error("Canvas toBlob failed"))
-              else resolve({ blob, base64 })
+              else resolve({ blob, imageBase64 })
             }, "image/jpeg", 0.92)
           }
           img.src = reader.result
@@ -1754,9 +1817,8 @@ export default function App() {
         }
       }
 
-      // Send base64 directly to OCR — no Storage round trip
       const { data: ocrData, error: ocrError } = await supabase.functions.invoke("ocr", {
-        body: { image: base64 },
+        body: { image: imageBase64 },
       })
       if (ocrError) throw ocrError
 

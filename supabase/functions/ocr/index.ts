@@ -9,9 +9,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { image } = await req.json()
+    const body = await req.json()
+    console.log('Received keys:', Object.keys(body))
+    console.log('Image field exists:', !!body.image)
+    console.log('Image length:', body.image?.length || 0)
+    console.log('Image prefix (first 40 chars):', body.image?.slice(0, 40))
 
-    if (!image) {
+    if (!body.image) {
       return new Response(
         JSON.stringify({ error: 'Missing image field', confidence_flag: 'ocr_uncertain' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
@@ -29,8 +33,8 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        src: image,
-        formats: ['latex_styled'],
+        src: `data:image/jpeg;base64,${body.image}`,
+        formats: ['latex_styled', 'text'],
         data_options: { include_svg: false },
       }),
       signal: controller.signal,
@@ -38,7 +42,11 @@ Deno.serve(async (req) => {
 
     clearTimeout(timeout)
 
+    console.log('Mathpix response status:', mathpixRes.status)
+
     if (!mathpixRes.ok) {
+      const errText = await mathpixRes.text()
+      console.log('Mathpix error body:', errText)
       return new Response(
         JSON.stringify({ error: 'OCR failed', confidence_flag: 'ocr_uncertain' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
@@ -47,12 +55,18 @@ Deno.serve(async (req) => {
 
     const data = await mathpixRes.json()
 
+    console.log('Mathpix result:', JSON.stringify(data))
+
     if (data.error) {
       throw new Error(`Mathpix error: ${data.error}`)
     }
 
-    const latex = data.latex_styled ?? ''
+    const field = data.latex_styled ? 'latex_styled' : data.text ? 'text' : 'none'
+    const latex = data.latex_styled || data.text || ''
     const confidenceFlag = latex.trim().length === 0 ? 'ocr_uncertain' : 'ok'
+    console.log('OCR field used:', field)
+    console.log('OCR char count:', latex.length)
+    console.log('OCR preview:', latex.slice(0, 100))
 
     return new Response(
       JSON.stringify({ latex, confidence_flag: confidenceFlag }),
