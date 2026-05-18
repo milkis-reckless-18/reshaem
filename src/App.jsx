@@ -7,7 +7,15 @@ import reshaemLogo from "./assets/reshaem-logo.svg"
 function preprocessForTTS(text) {
   const ordinals = { '2': 'второй', '3': 'третьей', '4': 'четвёртой' }
   return text
-    // Fractions
+    // General fraction: -?number/(expr)^n — before simple fractions
+    .replace(/(-?)(\d+)\/\(([^)]+)\)\^(\d+)/g, (_, minus, num, expr, exp) =>
+      `${minus ? 'минус ' : ''}${num} делить на ${expr} в ${ordinals[exp] ?? exp} степени`)
+    // Function notation — compound/derivative before simple
+    .replace(/f'\(x\)/g, 'эф штрих от икс')
+    .replace(/f\(g\(x\)\)/g, 'эф от джи от икс')
+    .replace(/f\(x\)/g, 'эф от икс')
+    .replace(/g\(x\)/g, 'джи от икс')
+    // Simple fractions
     .replace(/1\/2/g, 'одна вторая')
     .replace(/1\/4/g, 'одна четвёртая')
     .replace(/1\/3/g, 'одна третья')
