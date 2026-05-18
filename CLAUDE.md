@@ -1,133 +1,166 @@
-﻿# CLAUDE.md
+# Решаем — Claude Code Context
+*Последнее обновление: 17 мая 2026*
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Что это
+Веб-приложение на русском языке для подготовки к ЕГЭ по математике.
+Ученик фотографирует своё рукописное решение → получает пошаговый разбор от AI-наставника Макса → отслеживает прогресс.
+Слоган: "Пиши. Фоткай. Понимай."
+Дополнительная строка: "Ошибка? Хорошо. Разберёмся вместе."
 
-## What this is
-A Russian-language web app for ЕГЭ math preparation.
-Students photograph their handwritten math solutions, get Socratic feedback from AI tutor "Макс", and track progress over time.
-Tagline: "Пиши. Фоткай. Понимай."
+## Ключевая продуктовая идея
+Физико-цифровой цикл: ученик пишет от руки → фотографирует решение → получает голосовой разбор.
+Макс НИКОГДА не даёт готовый ответ — только один наводящий вопрос, который ведёт ученика к пониманию.
+Отличие от Photomath: мы не решаем за ученика.
 
-## Core product thesis
-Physical-digital loop: student writes by hand → photographs solution → gets intelligent voice feedback.
-This is the differentiator vs Photomath (which solves FOR the student).
-Макс never gives the answer. He asks one question that leads the student to find their own mistake.
+## Стек (зафиксирован, не менять без согласования)
+- React + Vite + Tailwind CSS — фронтенд
+- Supabase — анонимная авторизация + таблица сессий + граничные функции
+- Mathpix API — OCR рукописного текста → LaTeX
+- Claude API (claude-sonnet-4-6) — LaTeX → пошаговый разбор JSON
+- OpenAI TTS API — текст → речь, голос "echo", язык русский
+- Yandex Cloud Object Storage — деплой статического фронтенда
 
-## Commands
-```bash
-npm run dev      # start dev server on localhost:3000
-npm run build    # production build (run to catch errors before deploying)
+## Деплой
+- URL: https://reshaem-foundation.website.yandexcloud.net
+- GitHub: https://github.com/milkis-reckless-18/reshaem/
+- Фронтенд: Yandex Cloud Object Storage (публичный бакет reshaem-foundation)
+- Граничные функции: Supabase (eu-central-1, Frankfurt)
+- Для обновления: npm run build → удалить старые файлы в бакете → загрузить dist/
+
+## Логотип
+- Файл: `src/assets/reshaem-logo.svg` — вордмарк 680×320, прозрачный фон
+- Wordmark: `(Resha)Σm`, Clash Display Bold, Warm White + Cyan Mint акцент
+- Также скопирован в `public/favicon.svg` (используется как favicon в index.html)
+- Логотип не используется в UI приложения — только как favicon
+
+## Дизайн-система (не менять)
+- Фон: тёмная палитра — Midnight #0D0F1C, Deep Navy #1A1D2E, Elevated #2E3150
+- Акцент (верно): Cyan Mint #5EECD8 / tint #1A3A36
+- Акцент (ошибка): Coral Rose #FF6B6B / tint #2A1A1A
+- Текст: Warm White #F0EEE6 / secondary rgba(240,238,230,0.6)
+- Радиус скругления: 16px
+- Переходы: 200ms ease
+- Шрифт: Inter или системный sans-serif
+- Без градиентов, без бейджей, без декоративных элементов
+- Плавающие математические символы на фоне: ∫ √ π ∑ ≠ ∞ Δ x² ± × ÷ ≈ θ, opacity 0.05
+- Полная дизайн-система: см. design-system.md
+
+## Персонаж AI
+Имя: Макс
+Обращение: ты, тепло, как умный старший друг
+Никогда не даёт финальный ответ
+Один наводящий вопрос за раз
+Возвращает структурированный JSON (см. claude_system_prompt.md)
+
+## Системный промпт Claude API
+Версия: v3
+Файл: claude_system_prompt.md в корне проекта
+ТОЛЬКО владелец продукта редактирует системный промпт — не Claude Code
+
+## Схема таблицы сессий Supabase
+```sql
+CREATE TABLE sessions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  image_url TEXT,
+  ocr_result TEXT,
+  explanation TEXT,
+  topic TEXT,
+  is_correct BOOLEAN,
+  nudge_question TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access their own sessions"
+ON sessions FOR ALL USING (auth.uid() = user_id);
 ```
 
-Deploy an edge function (requires Supabase CLI login):
-```bash
-npx supabase functions deploy ocr --no-verify-jwt
+## Таксономия тем ЕГЭ (12 тем)
+Алгебра, Геометрия, Тригонометрия, Производная, Интеграл, Вероятность, Статистика, Уравнения, Неравенства, Функции, Числа, Текстовая задача
+
+## Поток API (по порядку)
+1. Ученик загружает фото (изображение сжимается до макс. 1200px перед отправкой)
+2. Фронтенд → /ocr → Mathpix → возвращает LaTeX (таймаут 10 сек)
+3. Фронтенд → /explain → Claude API с системным промптом → возвращает JSON
+4. Фронтенд парсит JSON, показывает шаги по одному
+5. Кнопка воспроизведения → /speak → OpenAI TTS echo → возвращает аудио blob
+6. Все данные сохраняются в таблицу sessions Supabase
+
+## Модель взаимодействия (пошаговый разбор)
+- Шаги показываются по одному, не все сразу
+- После каждого шага — два варианта ответа:
+  - Положительный (случайный): Ясно / Гуд / Принято / ОК / Дальше
+  - Отрицательный (случайный): Не ясно / Не понятно / Объясни
+- Отрицательный ответ → повторный вызов Claude API для перефразировки шага
+- После всех шагов → итоговый вердикт → предсказание балла
+- Предсказание: +3 балла если верно / +5 баллов если исправить ошибку
+
+## Что возвращает Макс (структура JSON)
+```json
+{
+  "message": "общий вердикт одной фразой",
+  "steps": [
+    {
+      "step_number": 1,
+      "is_correct": true,
+      "student_work": "что написал ученик — plain text",
+      "explanation": "комментарий Макса — plain text",
+      "correction": null
+    }
+  ],
+  "input_type": "solution | problem_only | unreadable",
+  "is_correct": true,
+  "topic": "одна из 12 тем",
+  "confidence_flag": "ok | ocr_uncertain",
+  "nudge_question": "наводящий вопрос или null"
+}
 ```
 
-## Architecture
+## Экраны приложения
+1. Главный экран — зона загрузки фото (камера по тапу), история решений внизу
+2. Онбординг — слайд снизу при первом визите, ?demo=true всегда показывает
+3. Пошаговый разбор — шаги с цветовой индикацией, кнопки ответа, TTS
+4. История — тап на миниатюру открывает нижний лист с полным разбором
+5. Конец разбора — "Ещё такие задачи →" / "На главную"
 
-### Frontend
-Single-page React app. All UI lives in `src/App.jsx` — no component files yet. State flows top-down from the `App` component. Supabase client is initialized once in `src/lib/supabase.js`.
-
-### API routing: two different paths
-- **TTS** (`/api/tts`): Vite dev proxy defined in `vite.config.js`. Forwards to `https://api.openai.com/v1/audio/speech` and injects `VITE_OPENAI_API_KEY` server-side so the key never reaches the browser.
-- **OCR** (`supabase.functions.invoke("ocr")`): Supabase Edge Function (Deno), source at `supabase/functions/ocr/index.ts`. Deployed to Supabase, not run locally.
-
-### Data flow on photo upload
-1. File → `FileReader.readAsDataURL` → base64 string
-2. Insert row to `sessions` table: `{ user_id, image_url: base64 }`
-3. Call OCR edge function with base64 → Mathpix returns LaTeX
-4. Update session row with `ocr_result`
-5. (Next) Call `explain` edge function with LaTeX → Claude returns JSON
-6. (Next) Play button calls `/api/tts` with `message` field from JSON
-
-### Supabase
-- Anonymous auth: `signInAnonymously()` on mount, session reused on refresh via `getSession()`
-- `sessions` table stores everything: image (base64), LaTeX, Claude JSON fields, topic
-- Images stored as base64 `text` in the DB for now — Supabase Storage not yet connected
-
-### Edge functions
-Deno runtime. Source in `supabase/functions/<name>/index.ts`. Secrets (`MATHPIX_APP_ID`, `MATHPIX_APP_KEY`, `ANTHROPIC_API_KEY`) are set in Supabase dashboard → Edge Functions → Manage secrets, not in `.env`.
-
-## Environment variables
-`.env` (frontend only, must have `VITE_` prefix):
+## Переменные окружения
 ```
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-VITE_OPENAI_API_KEY=     # used by Vite proxy server-side for TTS
-```
-
-Supabase Edge Function secrets (set in dashboard, not in .env):
-```
+VITE_SUPABASE_URL=          # безопасно для фронтенда
+VITE_SUPABASE_ANON_KEY=     # безопасно для фронтенда (publishable key)
+# Секреты граничных функций (никогда не во фронтенд):
 MATHPIX_APP_ID=
 MATHPIX_APP_KEY=
 ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
 ```
 
-## Supabase sessions table schema
-```
-id            uuid primary key
-user_id       uuid (anonymous auth)
-image_url     text (base64 data URL for now)
-ocr_result    text (LaTeX from Mathpix)
-explanation   text (Макс message)
-topic         text (one of 12 ЕГЭ topics)
-is_correct    boolean nullable
-nudge_question text nullable
-created_at    timestamptz default now()
-```
+## Текущий статус
+- ✅ UI scaffold с дизайн-системой
+- ✅ Онбординг с слайдом снизу
+- ✅ Supabase анонимная авторизация + хранение сессий
+- ✅ Mathpix OCR интеграция
+- ✅ Claude API пошаговый разбор
+- ✅ OpenAI TTS голос echo
+- ✅ История решений с персистентностью
+- ✅ Деплой на Yandex Cloud
+- ⚠️ OCR EarlyDrop на мобильных — нужно сжатие изображения + таймаут
+- ⚠️ Двойное подтверждение камеры — нужно убрать
+- ❌ TTS не работает на мобильном Chrome/Brave — нужен Blob URL подход
 
-## ЕГЭ topic taxonomy (12 topics)
-Алгебра, Геометрия, Тригонометрия, Производная, Интеграл, Вероятность, Статистика, Уравнения, Неравенства, Функции, Числа, Текстовая задача
+## Следующие шаги
+1. Исправить OCR EarlyDrop: сжать изображение до 1200px перед отправкой + таймаут 10 сек
+2. Убрать двойное подтверждение камеры
+3. Исправить TTS на мобильном: Blob URL, синхронно в обработчике тапа
+4. UX-тест с 5 учениками
+5. Конкурентный анализ
+6. README для GitHub
+7. Финальный деплой
 
-## What Макс returns (JSON structure)
-```json
-{
-  "message": "explanation shown and spoken — plain text, no LaTeX",
-  "input_type": "solution" | "problem_only" | "unreadable",
-  "is_correct": true | false | null,
-  "topic": "one of 12 ЕГЭ topics",
-  "confidence_flag": "ok" | "ocr_uncertain",
-  "nudge_question": "Socratic question if wrong, null if correct"
-}
-```
-Full system prompt: `claude_system_prompt.md` in project root.
-
-## Design system (do not change)
-- Background: `#ffffff`, Text: `#1a1a2e`, Accent: `#f59e0b` (amber)
-- Border radius: 16px, Transitions: 200ms ease
-- Font: Inter or system sans-serif
-- No gradients, no badges, no decorative elements
-- All styles are inline (no CSS modules, no Tailwind classes in JSX yet)
-- Full design system with CSS tokens, components and rules: see design-system.md in project root.
-
-## AI persona constraints
-- Model: `claude-sonnet-4-6` only
-- Voice: OpenAI TTS `echo`, Russian
-- Never give the final answer
-- One Socratic question per response
-- No autoplay — play button only
-
-## What NOT to do
-- Do not add a login/signup flow — anonymous auth only
-- Do not add unnecessary npm dependencies
-- Do not change the Claude model
-- Do not store secrets in `.env` that belong in Supabase Edge Function secrets
-
-## Current status
-- UI scaffold: complete
-- TTS voice (OpenAI echo): connected via Vite proxy
-- Supabase anonymous auth + sessions table: connected
-- Mathpix OCR edge function: deployed
-- Claude API explanation: not yet connected
-- Knowledge gap visualization: not yet built
-
-## Next steps in order
-1. Connect Claude API (`explain` edge function)
-2. Wire explanation JSON into the UI (replace `ocr_done` placeholder state)
-3. Connect knowledge gap visualization
-4. Switch image storage from base64 to Supabase Storage
-5. UI polish
-6. Deploy
-
-## File writing note (Windows + WSL environment)
-Bash heredocs fail on files containing single quotes or em dashes (common in Russian strings). Use **PowerShell** with `@'...'@` here-strings to write or update source files — it handles Unicode and special characters correctly.
+## Что НЕЛЬЗЯ делать
+- Давать финальный ответ ученику ни при каких условиях
+- Менять цвета дизайн-системы: палитра зафиксирована (Midnight #0D0F1C, Cyan Mint #5EECD8, Coral Rose #FF6B6B)
+- Добавлять экран входа/регистрации — только анонимная авторизация
+- Добавлять лишние зависимости
+- Менять модель Claude — только claude-sonnet-4-6
+- Автовоспроизведение звука — только по кнопке
+- Отправлять секретные ключи API во фронтенд
