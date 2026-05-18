@@ -712,9 +712,12 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
 // ─── Session Detail Sheet ─────────────────────────────────────────────────────
 
 function SessionSheet({ session, onClose }) {
-  const [visible, setVisible] = useState(false)
-  const [detail, setDetail]   = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [visible, setVisible]           = useState(false)
+  const [detail, setDetail]             = useState(null)
+  const [loading, setLoading]           = useState(true)
+  const [loadError, setLoadError]       = useState(false)
+  const [loadKey, setLoadKey]           = useState(0)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 16)
@@ -722,29 +725,50 @@ function SessionSheet({ session, onClose }) {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
     async function load() {
       setLoading(true)
-      const { data } = await supabase
+      setLoadError(false)
+      const { data, error } = await supabase
         .from("sessions")
-        .select("id, image_url, explanation, topic, is_correct, nudge_question, created_at")
+        .select("id, image_url, ocr_result, explanation, topic, is_correct, nudge_question, created_at")
         .eq("id", session.id)
         .single()
-      if (data) setDetail(data)
+      if (cancelled) return
+      if (error || !data) { setLoadError(true) } else { setDetail(data) }
       setLoading(false)
     }
     load()
-  }, [session.id])
+    return () => { cancelled = true }
+  }, [session.id, loadKey])
 
   const handleClose = () => {
     setVisible(false)
     setTimeout(onClose, 350)
   }
 
-  const isCorrect = detail?.is_correct === true
-  const isWrong   = detail?.is_correct === false
+  // Parse explanation: new sessions store full JSON, old ones store plain text
+  let parsed = null
+  let isOldFormat = false
+  if (detail?.explanation) {
+    try {
+      const obj = JSON.parse(detail.explanation)
+      if (obj && typeof obj === 'object') parsed = obj
+    } catch {
+      isOldFormat = true
+    }
+  }
+
+  const isCorrect = (parsed ? parsed.is_correct : detail?.is_correct) === true
+  const isWrong   = (parsed ? parsed.is_correct : detail?.is_correct) === false
+  const steps     = parsed?.steps ?? []
+  const message   = parsed?.message ?? null
+  const topic     = parsed?.topic ?? detail?.topic ?? null
+  const imageUrl  = detail?.image_url ?? session.image_url ?? null
 
   return (
     <>
+      {/* Backdrop */}
       <div onClick={handleClose} style={{
         position: "fixed", inset: 0,
         background: "rgba(0,0,0,0.6)",
@@ -753,6 +777,7 @@ function SessionSheet({ session, onClose }) {
         transition: "opacity 0.3s ease",
       }} />
 
+      {/* Sheet */}
       <div style={{
         position: "fixed",
         bottom: 0, left: "50%",
@@ -764,58 +789,102 @@ function SessionSheet({ session, onClose }) {
         padding: "10px var(--screen-px) 48px",
         zIndex: 61,
         transition: "transform 0.42s cubic-bezier(0.32, 0.72, 0, 1)",
-        maxHeight: "85vh",
+        maxHeight: "90vh",
         overflowY: "auto",
       }}>
         {/* Handle */}
-        <div style={{ width: 34, height: 4, background: "rgba(217,178,111,0.2)", borderRadius: 4, margin: "0 auto 20px" }} />
-
-        {/* Close button */}
-        <button onClick={handleClose} style={{
-          position: "absolute", top: 18, right: 18,
-          width: 32, height: 32,
-          background: "var(--color-card)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-md)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "var(--color-text-muted)",
-          cursor: "pointer", padding: 0,
-          transition: "background 0.18s",
-        }}>
-          <XIcon />
-        </button>
+        <div style={{ width: 34, height: 4, background: "rgba(94,236,216,0.2)", borderRadius: 4, margin: "0 auto 20px" }} />
 
         {loading ? (
           <div style={{ display: "flex", justifyContent: "center", padding: "32px 0" }}>
             <DotLoader label="Загружаю..." />
           </div>
-        ) : detail ? (
+
+        ) : loadError || !detail ? (
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", margin: "0 0 16px" }}>
+              Не удалось загрузить
+            </p>
+            <button onClick={() => setLoadKey(k => k + 1)} style={{
+              background: "var(--color-surface-2)", border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)", padding: "8px 20px",
+              color: "var(--color-accent)", fontFamily: "var(--font-body)",
+              fontSize: "var(--text-sm)", fontWeight: 600, cursor: "pointer",
+            }}>
+              Повторить
+            </button>
+          </div>
+
+        ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Thumbnail + topic + verdict */}
+
+            {/* ── Header: image + topic + is_correct ── */}
             <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 4 }}>
-              {detail.image_url && (
-                <div style={{ width: 52, height: 52, borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--color-border)", flexShrink: 0 }}>
-                  <img src={detail.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              {imageUrl && (
+                <div
+                  onClick={() => setLightboxOpen(true)}
+                  style={{
+                    width: 56, height: 56,
+                    borderRadius: "var(--radius-md)",
+                    overflow: "hidden",
+                    border: "1px solid var(--color-border)",
+                    flexShrink: 0, cursor: "pointer",
+                  }}
+                >
+                  <img src={imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                {detail.topic && (
-                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-text-muted)", marginBottom: 3 }}>
-                    {detail.topic}
+                {topic && (
+                  <div style={{
+                    fontSize: "var(--text-xs)", fontWeight: 700,
+                    letterSpacing: "0.08em", textTransform: "uppercase",
+                    color: "var(--color-text-muted)", marginBottom: 3,
+                  }}>
+                    {topic}
                   </div>
                 )}
-                <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", fontWeight: 700, letterSpacing: "var(--tracking-tight)", color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-primary)" }}>
+                <div style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "var(--text-lg)", fontWeight: 700,
+                  letterSpacing: "var(--tracking-tight)",
+                  color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-primary)",
+                }}>
                   {isCorrect ? "Верное решение" : isWrong ? "Найдена ошибка" : "Анализ"}
                 </div>
               </div>
             </div>
 
-            {/* Explanation */}
-            {detail.explanation ? (
-              <div style={{ background: isCorrect ? "var(--color-accent-tint)" : "var(--color-card)", border: `1px solid ${isCorrect ? "var(--color-border)" : "var(--color-border)"}`, borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
+            {/* ── Steps (new format) ── */}
+            {steps.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {steps.map((step, i) => (
+                  <StepCard key={step.step_number ?? i} step={step} index={i} />
+                ))}
+              </div>
+            )}
+
+            {/* ── Fallback: old plain-text explanation ── */}
+            {isOldFormat && detail.explanation && (
+              <div style={{
+                background: isCorrect ? "var(--color-accent-tint)" : "var(--color-surface-2)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-xl)",
+                padding: "var(--space-5)",
+                position: "relative", overflow: "hidden",
+              }}>
+                <div style={{
+                  position: "absolute", top: 0, left: 0, bottom: 0, width: 3,
+                  background: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)",
+                  borderRadius: "3px 0 0 3px", opacity: 0.75,
+                }} />
                 <div style={{ paddingLeft: 14 }}>
-                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)", marginBottom: 8 }}>
+                  <div style={{
+                    fontSize: "var(--text-xs)", fontWeight: 700,
+                    letterSpacing: "0.07em", textTransform: "uppercase",
+                    color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)",
+                    marginBottom: 8,
+                  }}>
                     {isCorrect ? "✓ Верно" : isWrong ? "✗ Есть ошибка" : "Комментарий"}
                   </div>
                   <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-loose)" }}>
@@ -823,33 +892,123 @@ function SessionSheet({ session, onClose }) {
                   </p>
                 </div>
               </div>
-            ) : (
-              <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", textAlign: "center", padding: "12px 0", margin: 0 }}>
-                Разбор недоступен
-              </p>
             )}
 
-            {/* Nudge question */}
-            {detail.nudge_question && (
-              <div style={{ background: "var(--color-accent-tint)", border: "1px solid rgba(94,236,216,0.18)", borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: "var(--color-accent)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
-                <div style={{ paddingLeft: 14 }}>
-                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-text-muted)", marginBottom: 8 }}>
-                    Подумай
-                  </div>
-                  <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
-                    {detail.nudge_question}
-                  </p>
-                </div>
+            {/* ── No explanation at all ── */}
+            {!detail.explanation && (
+              <div style={{ textAlign: "center", padding: "12px 0" }}>
+                <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", margin: "0 0 12px" }}>
+                  Разбор недоступен
+                </p>
+                <button onClick={() => setLoadKey(k => k + 1)} style={{
+                  background: "var(--color-surface-2)", border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)", padding: "7px 18px",
+                  color: "var(--color-accent)", fontFamily: "var(--font-body)",
+                  fontSize: "var(--text-sm)", fontWeight: 600, cursor: "pointer",
+                }}>
+                  Повторить
+                </button>
               </div>
             )}
+
+            {/* ── Final verdict ── */}
+            {message && (
+              <div style={{
+                background: "var(--color-accent)",
+                borderRadius: "var(--radius-xl)",
+                padding: "var(--space-5)",
+              }}>
+                <div style={{
+                  fontSize: "var(--text-xs)", fontWeight: 700,
+                  letterSpacing: "0.08em", textTransform: "uppercase",
+                  color: "var(--color-bg)", opacity: 0.55, marginBottom: 8,
+                }}>
+                  Итог
+                </div>
+                <p style={{
+                  fontFamily: "var(--font-body)", fontSize: "var(--text-md)",
+                  color: "var(--color-bg)", margin: 0,
+                  lineHeight: "var(--leading-loose)", fontWeight: 500,
+                }}>
+                  {message}
+                </p>
+              </div>
+            )}
+
+            {/* ── Score predictor ── */}
+            {parsed && (
+              <div style={{
+                background: "var(--color-accent-tint)",
+                border: "1px solid rgba(250,223,127,0.2)",
+                borderRadius: "var(--radius-xl)",
+                padding: "var(--space-5)",
+                textAlign: "center",
+              }}>
+                <p style={{
+                  fontFamily: "var(--font-body)", fontSize: "var(--text-base)",
+                  fontWeight: 600, color: "var(--color-accent)",
+                  margin: 0, lineHeight: "var(--leading-normal)",
+                }}>
+                  {isCorrect
+                    ? "Прогноз: +3 балла к твоему результату 🎯"
+                    : "Исправь ошибку → +5 баллов на экзамене"}
+                </p>
+              </div>
+            )}
+
+            {/* ── Закрыть ── */}
+            <button onClick={handleClose} style={{
+              marginTop: 4,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: "100%",
+              background: "transparent",
+              color: "var(--color-text-muted)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-lg)",
+              padding: "13px var(--space-4)",
+              fontFamily: "var(--font-body)",
+              fontSize: "var(--text-base)", fontWeight: 600,
+              cursor: "pointer",
+            }}>
+              Закрыть
+            </button>
           </div>
-        ) : (
-          <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", textAlign: "center", padding: "20px 0", margin: 0 }}>
-            Не удалось загрузить
-          </p>
         )}
       </div>
+
+      {/* Lightbox */}
+      {imageUrl && lightboxOpen && (
+        <div
+          onClick={() => setLightboxOpen(false)}
+          style={{
+            position: "fixed", inset: 0,
+            background: "rgba(0,0,0,0.85)",
+            zIndex: 100,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            animation: "fadeIn 0.2s ease both",
+          }}
+        >
+          <button
+            onClick={() => setLightboxOpen(false)}
+            style={{
+              position: "absolute", top: 16, right: 16,
+              width: 32, height: 32,
+              background: "none", border: "none", cursor: "pointer",
+              color: "#fff", fontSize: 24, lineHeight: 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              padding: 0,
+            }}
+          >
+            ✕
+          </button>
+          <img
+            src={imageUrl}
+            alt=""
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth: "100%", maxHeight: "100vh", objectFit: "contain", borderRadius: "var(--radius-md)" }}
+          />
+        </div>
+      )}
     </>
   )
 }
@@ -1993,9 +2152,10 @@ export default function App() {
       if (explainError) throw explainError
 
       // Fire-and-forget — DB persistence doesn't block the user
+      // Store full JSON so history can render step-by-step cards
       if (sessionRow?.id) {
         supabase.from("sessions").update({
-          explanation: explainData.message,
+          explanation: JSON.stringify(explainData),
           topic: explainData.topic,
           is_correct: explainData.is_correct,
           nudge_question: explainData.nudge_question,
