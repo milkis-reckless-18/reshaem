@@ -1859,7 +1859,7 @@ export default function App() {
       // Fire-and-forget — DB persistence doesn't block the user
       if (sessionRow?.id) {
         supabase.from("sessions").update({ ocr_result: latex }).eq("id", sessionRow.id)
-          .catch(() => {})
+          .then(null, () => {})
       }
 
       setOcrLatex(latex)
@@ -1881,7 +1881,7 @@ export default function App() {
             topic: explainData.topic,
             is_correct: explainData.is_correct,
             nudge_question: explainData.nudge_question,
-          }).eq("id", sessionRow.id).catch(() => {})
+          }).eq("id", sessionRow.id).then(null, () => {})
         }
 
         setMaxResponse(explainData)
