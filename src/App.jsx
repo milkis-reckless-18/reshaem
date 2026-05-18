@@ -1768,7 +1768,8 @@ export default function App() {
     let sessionRow = null
 
     try {
-      // Resize to max 1200px → base64 (for OCR) + blob (for Storage)
+      // Resize to max 800px / quality 0.85 — 3× smaller than 1200px/0.92,
+      // sufficient for Mathpix handwritten OCR
       const { blob, imageBase64 } = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onerror = reject
@@ -1776,54 +1777,65 @@ export default function App() {
           const img = new Image()
           img.onerror = reject
           img.onload = () => {
-            const MAX = 1200
+            const MAX = 800
             const scale = img.width > MAX ? MAX / img.width : 1
             const canvas = document.createElement("canvas")
             canvas.width  = Math.round(img.width  * scale)
             canvas.height = Math.round(img.height * scale)
             canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height)
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.92)
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
             const imageBase64 = dataUrl.split(',')[1]
             canvas.toBlob(blob => {
               if (!blob) reject(new Error("Canvas toBlob failed"))
               else resolve({ blob, imageBase64 })
-            }, "image/jpeg", 0.92)
+            }, "image/jpeg", 0.85)
           }
           img.src = reader.result
         }
         reader.readAsDataURL(file)
       })
 
+      // Build session insert promise (parallel with OCR — they're independent)
+      let sessionInsertPromise = Promise.resolve(null)
       if (userId) {
-        // Compute public URL synchronously — no network call needed
         const path = `${userId}/${Date.now()}.jpg`
         const { data: { publicUrl } } = supabase.storage.from("solution-images").getPublicUrl(path)
 
-        // Fire-and-forget Storage upload — not on critical path
         supabase.storage.from("solution-images")
           .upload(path, blob, { contentType: "image/jpeg" })
           .catch(err => console.warn("Storage upload failed:", err.message))
 
-        const { data: row, error } = await supabase
+        sessionInsertPromise = supabase
           .from("sessions")
           .insert({ user_id: userId, image_url: publicUrl })
           .select("id, image_url, created_at")
           .single()
-        if (!error && row) {
-          sessionRow = row
-          setHistory(prev => [{ ...row, image_url: localUrl }, ...prev])
-        }
+          .then(({ data: row, error }) => {
+            if (!error && row) {
+              setHistory(prev => [{ ...row, image_url: localUrl }, ...prev])
+              return row
+            }
+            return null
+          })
+          .catch(() => null)
       }
 
-      const { data: ocrData, error: ocrError } = await supabase.functions.invoke("ocr", {
-        body: { image: imageBase64 },
-      })
+      // Fire OCR immediately — don't wait for session insert
+      const [ocrResult, insertedRow] = await Promise.all([
+        supabase.functions.invoke("ocr", { body: { image: imageBase64 } }),
+        sessionInsertPromise,
+      ])
+      sessionRow = insertedRow
+
+      const { data: ocrData, error: ocrError } = ocrResult
       if (ocrError) throw ocrError
 
       const { latex, confidence_flag } = ocrData
 
+      // Fire-and-forget — DB persistence doesn't block the user
       if (sessionRow?.id) {
-        await supabase.from("sessions").update({ ocr_result: latex }).eq("id", sessionRow.id)
+        supabase.from("sessions").update({ ocr_result: latex }).eq("id", sessionRow.id)
+          .catch(() => {})
       }
 
       setOcrLatex(latex)
@@ -1838,13 +1850,14 @@ export default function App() {
         })
         if (explainError) throw explainError
 
+        // Fire-and-forget — DB persistence doesn't block the user
         if (sessionRow?.id) {
-          await supabase.from("sessions").update({
+          supabase.from("sessions").update({
             explanation: explainData.message,
             topic: explainData.topic,
             is_correct: explainData.is_correct,
             nudge_question: explainData.nudge_question,
-          }).eq("id", sessionRow.id)
+          }).eq("id", sessionRow.id).catch(() => {})
         }
 
         setMaxResponse(explainData)
