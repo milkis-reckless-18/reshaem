@@ -2,40 +2,27 @@
 
 :root {
   /* BACKGROUNDS */
-  --color-bg:           #1C1714;
-  --color-surface:      #2A2320;
-  --color-surface-2:    #332C29;
-  --color-surface-3:    #3D3530;
+  --color-bg:           #0D0F1C;
+  --color-surface:      #1A1D2E;
+  --color-card:         #2E3150;
+  --color-border:       #3E4170;
 
-  /* ACCENTS */
-  --color-jasmine:      #FADF7F;
-  --color-jasmine-dim:  rgba(250, 223, 127, 0.12);
-  --color-vanilla:      #F2E29F;
-  --color-fawn:         #D9B26F;
-  --color-sand:         #A69658;
-  --color-rose:         #795C5F;
-  --color-rose-light:   #9E7C7F;
+  /* ACCENT — correct / progress */
+  --color-accent:       #5EECD8;
+  --color-accent-tint:  #1A3A36;
 
-  /* SEMANTIC */
-  --color-error:        #C97B6A;
-  --color-error-bg:     rgba(201, 123, 106, 0.10);
-  --color-error-border: rgba(201, 123, 106, 0.25);
-  --color-correct:      #7EC896;
-  --color-correct-bg:   rgba(126, 200, 150, 0.10);
-  --color-correct-border: rgba(126, 200, 150, 0.22);
-  --color-warning:      #D9B26F;
-  --color-warning-bg:   rgba(217, 178, 111, 0.10);
+  /* ACCENT — error / incorrect */
+  --color-error:        #FF6B6B;
+  --color-error-tint:   #2A1A1A;
 
   /* TEXT */
-  --color-text-primary:   #F2E29F;
-  --color-text-secondary: rgba(242, 226, 159, 0.6);
-  --color-text-dim:       rgba(242, 226, 159, 0.4);
-  --color-text-ghost:     rgba(242, 226, 159, 0.2);
+  --color-text-primary:   #F0EEE6;
+  --color-text-secondary: #8B8FAA;
+  --color-text-muted:     #6B6E8A;
 
-  /* BORDERS */
-  --color-border:         rgba(217, 178, 111, 0.15);
-  --color-border-strong:  rgba(217, 178, 111, 0.28);
-  --color-border-subtle:  rgba(217, 178, 111, 0.08);
+  /* SHARED */
+  --border-radius: 16px;
+  --transition:    200ms ease;
 
   /* FONTS */
   --font-display: 'Clash Display', 'Space Grotesk', sans-serif;
@@ -138,9 +125,9 @@ body::before {
   position: absolute;
   left: 0; right: 0;
   height: 1.5px;
-  background: linear-gradient(90deg, transparent 5%, var(--color-jasmine) 40%, var(--color-jasmine) 60%, transparent 95%);
+  background: linear-gradient(90deg, transparent 5%, var(--color-accent) 40%, var(--color-accent) 60%, transparent 95%);
   animation: scanLine 3.5s ease-in-out infinite;
-  box-shadow: 0 0 14px rgba(250, 223, 127, 0.5);
+  box-shadow: 0 0 14px rgba(94, 236, 216, 0.5);
   pointer-events: none;
 }
 

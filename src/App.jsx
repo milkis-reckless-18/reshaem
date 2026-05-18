@@ -40,7 +40,7 @@ const PauseIcon = () => (
 
 const SpinnerIcon = ({ size = 20 }) => (
   <svg className="spin" xmlns="http://www.w3.org/2000/svg" width={size} height={size}
-    viewBox="0 0 24 24" fill="none" stroke="var(--color-jasmine)" strokeWidth="2.5"
+    viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2.5"
     strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 12a9 9 0 1 1-6.219-8.56" />
   </svg>
@@ -81,7 +81,7 @@ function DotLoader({ label }) {
           <div key={i} style={{
             width: 8, height: 8,
             borderRadius: "var(--radius-full)",
-            background: "var(--color-jasmine)",
+            background: "var(--color-accent)",
             animation: `dotPulse 1.2s ${i * 0.2}s ease-in-out infinite`,
           }} />
         ))}
@@ -90,7 +90,7 @@ function DotLoader({ label }) {
         <p style={{
           fontFamily: "var(--font-body)",
           fontSize: "var(--text-sm)",
-          color: "var(--color-text-dim)",
+          color: "var(--color-text-muted)",
           margin: 0,
           letterSpacing: "0.03em",
         }}>
@@ -170,11 +170,11 @@ function PlayButton({ text }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 7,
-        background: "var(--color-surface-2)",
+        background: "var(--color-card)",
         border: "1px solid var(--color-border)",
         borderRadius: "var(--radius-full)",
         padding: "9px 16px",
-        color: "var(--color-fawn)",
+        color: "var(--color-text-secondary)",
         fontFamily: "var(--font-body)",
         fontSize: "var(--text-sm)",
         fontWeight: 600,
@@ -195,7 +195,7 @@ function PlayButton({ text }) {
 
 // ─── Step / Verdict Play Button ───────────────────────────────────────────────
 
-function StepPlayButton({ text, activeColor = "var(--color-jasmine)", inactiveColor = "rgba(250,223,127,0.38)" }) {
+function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveColor = "rgba(94,236,216,0.38)" }) {
   const [status, setStatus] = useState("idle")
   const sourceRef = useRef(null)
   const bufferRef = useRef(null)
@@ -256,7 +256,7 @@ function StepPlayButton({ text, activeColor = "var(--color-jasmine)", inactiveCo
     <button onClick={handleClick} style={{
       width: 48, height: 48,
       borderRadius: "var(--radius-full)",
-      background: "rgba(250,223,127,0.15)",
+      background: "rgba(94,236,216,0.15)",
       border: "none",
       display: "flex", alignItems: "center", justifyContent: "center",
       cursor: "pointer", flexShrink: 0, padding: 0,
@@ -276,11 +276,11 @@ function StepCard({ step, index }) {
 
   return (
     <div style={{
-      background: isError   ? "var(--color-error-bg)"
-                : isCorrect ? "var(--color-correct-bg)"
+      background: isError   ? "var(--color-error-tint)"
+                : isCorrect ? "var(--color-accent-tint)"
                 :             "var(--color-surface)",
-      border: `1px solid ${isError   ? "var(--color-error-border)"
-                         : isCorrect ? "var(--color-correct-border)"
+      border: `1px solid ${isError   ? "var(--color-border)"
+                         : isCorrect ? "var(--color-border)"
                          :             "var(--color-border)"}`,
       borderRadius: "var(--radius-lg)",
       padding: "14px 16px",
@@ -297,10 +297,10 @@ function StepCard({ step, index }) {
         borderRadius: 9,
         background: isError   ? "rgba(201,123,106,0.15)"
                   : isCorrect ? "rgba(126,200,150,0.15)"
-                  :             "var(--color-surface-2)",
+                  :             "var(--color-card)",
         color: isError   ? "var(--color-error)"
-             : isCorrect ? "var(--color-correct)"
-             :             "var(--color-fawn)",
+             : isCorrect ? "var(--color-accent)"
+             :             "var(--color-text-secondary)",
         display: "flex", alignItems: "center", justifyContent: "center",
         fontFamily: "var(--font-display)",
         fontSize: 13, fontWeight: 700,
@@ -326,7 +326,7 @@ function StepCard({ step, index }) {
             {step.student_work}
           </span>
           {isError && step.correction && (
-            <span style={{ color: "var(--color-correct)", marginLeft: 8 }}>
+            <span style={{ color: "var(--color-accent)", marginLeft: 8 }}>
               {step.correction}
             </span>
           )}
@@ -336,7 +336,7 @@ function StepCard({ step, index }) {
         {step.explanation && (
           <div style={{
             fontSize: "var(--text-sm)",
-            color: "var(--color-text-dim)",
+            color: "var(--color-text-muted)",
             lineHeight: "var(--leading-normal)",
           }}>
             {step.explanation}
@@ -349,8 +349,8 @@ function StepCard({ step, index }) {
         <div style={{
           fontSize: 13,
           color: isError   ? "var(--color-error)"
-               : isCorrect ? "var(--color-correct)"
-               :             "var(--color-fawn)",
+               : isCorrect ? "var(--color-accent)"
+               :             "var(--color-text-secondary)",
         }}>
           {isCorrect ? "✓" : isError ? "✗" : "—"}
         </div>
@@ -386,7 +386,7 @@ function MathBackground() {
           top: c.top, left: c.left,
           fontSize: c.size,
           lineHeight: 1,
-          color: "var(--color-jasmine)",
+          color: "var(--color-accent)",
           opacity: 0.05,
           userSelect: "none",
           "--char-rot": c.rot,
@@ -445,7 +445,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
           fontSize: "var(--text-2xl)",
           fontWeight: 700,
           letterSpacing: "var(--tracking-tight)",
-          color: "var(--color-jasmine)",
+          color: "var(--color-accent)",
           lineHeight: "var(--leading-tight)",
         }}>
           Решаем
@@ -454,7 +454,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
           margin: "4px 0 0",
           fontFamily: "var(--font-body)",
           fontSize: "var(--text-sm)",
-          color: "var(--color-sand)",
+          color: "var(--color-text-muted)",
           letterSpacing: "0.04em",
         }}>
           Пиши. Фоткай. Понимай.
@@ -486,11 +486,11 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
             position: "relative",
             overflow: "hidden",
             border: dragging
-              ? "1.5px solid var(--color-jasmine)"
+              ? "1.5px solid var(--color-accent)"
               : "1px solid var(--color-border)",
             transition: "border-color 0.18s ease",
             boxShadow: dragging
-              ? "0 0 0 1px rgba(250,223,127,0.15), inset 0 0 60px rgba(250,223,127,0.04)"
+              ? "0 0 0 1px rgba(94,236,216,0.15), inset 0 0 60px rgba(250,223,127,0.04)"
               : "inset 0 0 60px rgba(121,92,95,0.07)",
             display: "flex",
             alignItems: "center",
@@ -503,7 +503,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
             <div key={i} style={{
               position: "absolute",
               width: 24, height: 24,
-              borderColor: "var(--color-jasmine)",
+              borderColor: "var(--color-accent)",
               borderStyle: "solid",
               opacity: 0.7,
               ...s,
@@ -518,7 +518,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
             <p style={{
               fontFamily: "var(--font-body)",
               fontSize: "var(--text-base)",
-              color: "var(--color-text-dim)",
+              color: "var(--color-text-muted)",
               margin: "0 0 6px",
               lineHeight: "var(--leading-normal)",
             }}>
@@ -527,7 +527,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
             <p style={{
               fontFamily: "var(--font-body)",
               fontSize: "var(--text-xs)",
-              color: "var(--color-text-ghost)",
+              color: "var(--color-text-muted)",
               margin: 0,
               letterSpacing: "0.05em",
               textTransform: "uppercase",
@@ -544,9 +544,9 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
               width: 40, height: 40,
               borderRadius: "var(--radius-md)",
               background: "rgba(42,35,32,0.82)",
-              border: "1px solid var(--color-border-strong)",
+              border: "1px solid var(--color-border)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              color: "var(--color-fawn)",
+              color: "var(--color-text-secondary)",
               cursor: "pointer",
               padding: 0,
               zIndex: 2,
@@ -568,7 +568,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
             fontWeight: 700,
             letterSpacing: "var(--tracking-wider)",
             textTransform: "uppercase",
-            color: "var(--color-text-dim)",
+            color: "var(--color-text-muted)",
             margin: "0 0 12px",
           }}>
             История
@@ -580,7 +580,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
               <p style={{
                 fontFamily: "var(--font-body)",
                 fontSize: "var(--text-sm)",
-                color: "var(--color-text-ghost)",
+                color: "var(--color-text-muted)",
                 margin: 0,
               }}>
                 Пока пусто — загрузи первое решение
@@ -600,7 +600,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
                     cursor: "pointer",
                     transition: "border-color 0.18s ease",
                   }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = "var(--color-border-strong)"}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = "var(--color-border)"}
                   onMouseLeave={e => e.currentTarget.style.borderColor = "var(--color-border)"}
                 >
                   <img src={item.image_url} alt=""
@@ -681,11 +681,11 @@ function SessionSheet({ session, onClose }) {
         <button onClick={handleClose} style={{
           position: "absolute", top: 18, right: 18,
           width: 32, height: 32,
-          background: "var(--color-surface-2)",
+          background: "var(--color-card)",
           border: "1px solid var(--color-border)",
           borderRadius: "var(--radius-md)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          color: "var(--color-text-dim)",
+          color: "var(--color-text-muted)",
           cursor: "pointer", padding: 0,
           transition: "background 0.18s",
         }}>
@@ -707,11 +707,11 @@ function SessionSheet({ session, onClose }) {
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
                 {detail.topic && (
-                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-rose-light)", marginBottom: 3 }}>
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-text-muted)", marginBottom: 3 }}>
                     {detail.topic}
                   </div>
                 )}
-                <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", fontWeight: 700, letterSpacing: "var(--tracking-tight)", color: isCorrect ? "var(--color-correct)" : isWrong ? "var(--color-error)" : "var(--color-text-primary)" }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", fontWeight: 700, letterSpacing: "var(--tracking-tight)", color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-primary)" }}>
                   {isCorrect ? "Верное решение" : isWrong ? "Найдена ошибка" : "Анализ"}
                 </div>
               </div>
@@ -719,10 +719,10 @@ function SessionSheet({ session, onClose }) {
 
             {/* Explanation */}
             {detail.explanation ? (
-              <div style={{ background: isCorrect ? "var(--color-correct-bg)" : "var(--color-surface-2)", border: `1px solid ${isCorrect ? "var(--color-correct-border)" : "var(--color-border)"}`, borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: isCorrect ? "var(--color-correct)" : isWrong ? "var(--color-error)" : "var(--color-fawn)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
+              <div style={{ background: isCorrect ? "var(--color-accent-tint)" : "var(--color-card)", border: `1px solid ${isCorrect ? "var(--color-border)" : "var(--color-border)"}`, borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
                 <div style={{ paddingLeft: 14 }}>
-                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: isCorrect ? "var(--color-correct)" : isWrong ? "var(--color-error)" : "var(--color-fawn)", marginBottom: 8 }}>
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)", marginBottom: 8 }}>
                     {isCorrect ? "✓ Верно" : isWrong ? "✗ Есть ошибка" : "Комментарий"}
                   </div>
                   <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-loose)" }}>
@@ -731,20 +731,20 @@ function SessionSheet({ session, onClose }) {
                 </div>
               </div>
             ) : (
-              <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-ghost)", textAlign: "center", padding: "12px 0", margin: 0 }}>
+              <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", textAlign: "center", padding: "12px 0", margin: 0 }}>
                 Разбор недоступен
               </p>
             )}
 
             {/* Nudge question */}
             {detail.nudge_question && (
-              <div style={{ background: "var(--color-jasmine-dim)", border: "1px solid rgba(250,223,127,0.18)", borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: "var(--color-jasmine)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
+              <div style={{ background: "var(--color-accent-tint)", border: "1px solid rgba(94,236,216,0.18)", borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: "var(--color-accent)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
                 <div style={{ paddingLeft: 14 }}>
-                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-sand)", marginBottom: 8 }}>
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-text-muted)", marginBottom: 8 }}>
                     Подумай
                   </div>
-                  <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-vanilla)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
+                  <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
                     {detail.nudge_question}
                   </p>
                 </div>
@@ -752,7 +752,7 @@ function SessionSheet({ session, onClose }) {
             )}
           </div>
         ) : (
-          <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-ghost)", textAlign: "center", padding: "20px 0", margin: 0 }}>
+          <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", textAlign: "center", padding: "20px 0", margin: 0 }}>
             Не удалось загрузить
           </p>
         )}
@@ -850,11 +850,11 @@ function PracticeSheet({ topic, onUpload, onClose }) {
         <button onClick={handleClose} style={{
           position: "absolute", top: 18, right: 18,
           width: 32, height: 32,
-          background: "var(--color-surface-2)",
+          background: "var(--color-card)",
           border: "1px solid var(--color-border)",
           borderRadius: "var(--radius-md)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          color: "var(--color-text-dim)",
+          color: "var(--color-text-muted)",
           cursor: "pointer", padding: 0,
         }}>
           <XIcon />
@@ -864,7 +864,7 @@ function PracticeSheet({ topic, onUpload, onClose }) {
         <div style={{
           fontSize: "var(--text-xs)", fontWeight: 700,
           letterSpacing: "0.08em", textTransform: "uppercase",
-          color: "var(--color-rose-light)", marginBottom: 8,
+          color: "var(--color-text-muted)", marginBottom: 8,
         }}>
           {topic} · Похожая задача
         </div>
@@ -897,21 +897,21 @@ function PracticeSheet({ topic, onUpload, onClose }) {
             borderRadius: "var(--radius-2xl)",
             background: "#0C0A09",
             position: "relative", overflow: "hidden",
-            border: dragging ? "1.5px solid var(--color-jasmine)" : "1px solid var(--color-border)",
+            border: dragging ? "1.5px solid var(--color-accent)" : "1px solid var(--color-border)",
             transition: "border-color 0.18s ease",
             display: "flex", alignItems: "center", justifyContent: "center",
             cursor: "pointer",
           }}
         >
           {brackets.map((s, i) => (
-            <div key={i} style={{ position: "absolute", width: 20, height: 20, borderColor: "var(--color-jasmine)", borderStyle: "solid", opacity: 0.7, ...s }} />
+            <div key={i} style={{ position: "absolute", width: 20, height: 20, borderColor: "var(--color-accent)", borderStyle: "solid", opacity: 0.7, ...s }} />
           ))}
           <div className="viewfinder__scan" />
           <div style={{ textAlign: "center", position: "relative", zIndex: 1, padding: "0 24px" }}>
-            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-dim)", margin: "0 0 4px", lineHeight: "var(--leading-normal)" }}>
+            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", margin: "0 0 4px", lineHeight: "var(--leading-normal)" }}>
               Реши задачу и сфотографируй
             </p>
-            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)", color: "var(--color-text-ghost)", margin: 0, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)", color: "var(--color-text-muted)", margin: 0, letterSpacing: "0.05em", textTransform: "uppercase" }}>
               или перетащи файл
             </p>
           </div>
@@ -922,9 +922,9 @@ function PracticeSheet({ topic, onUpload, onClose }) {
               width: 36, height: 36,
               borderRadius: "var(--radius-md)",
               background: "rgba(42,35,32,0.82)",
-              border: "1px solid var(--color-border-strong)",
+              border: "1px solid var(--color-border)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              color: "var(--color-fawn)", cursor: "pointer", padding: 0, zIndex: 2,
+              color: "var(--color-text-secondary)", cursor: "pointer", padding: 0, zIndex: 2,
             }}
           >
             <GalleryIcon />
@@ -1010,7 +1010,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
         display: "flex",
         alignItems: "center",
         gap: 12,
-        borderBottom: "1px solid var(--color-border-subtle)",
+        borderBottom: "1px solid var(--color-border)",
       }}>
         {/* Back button */}
         <button
@@ -1054,7 +1054,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                 fontWeight: 700,
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
-                color: "var(--color-rose-light)",
+                color: "var(--color-text-muted)",
                 marginBottom: 2,
               }}>
                 {maxResponse.topic}
@@ -1064,7 +1064,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                 fontSize: "var(--text-lg)",
                 fontWeight: 700,
                 letterSpacing: "var(--tracking-tight)",
-                color: isCorrect ? "var(--color-correct)" : "var(--color-text-primary)",
+                color: isCorrect ? "var(--color-accent)" : "var(--color-text-primary)",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -1109,8 +1109,8 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
         {/* OCR uncertain */}
         {state === "ocr_uncertain" && (
           <div className="stagger-1" style={{
-            background: "var(--color-error-bg)",
-            border: "1px solid var(--color-error-border)",
+            background: "var(--color-error-tint)",
+            border: "1px solid var(--color-border)",
             borderRadius: "var(--radius-xl)",
             padding: "var(--space-5)",
             position: "relative",
@@ -1134,7 +1134,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
               <p style={{
                 fontFamily: "var(--font-body)",
                 fontSize: "var(--text-sm)",
-                color: "var(--color-text-dim)",
+                color: "var(--color-text-muted)",
                 margin: 0,
                 lineHeight: "var(--leading-normal)",
               }}>
@@ -1157,13 +1157,13 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
 
                 {/* Nudge question — shown during step flow once an error is revealed */}
                 {!stepsDone && maxResponse.nudge_question && localSteps.slice(0, stepIndex + 1).some(s => s.is_correct === false) && (
-                  <div style={{ background: "var(--color-jasmine-dim)", border: "1px solid rgba(250,223,127,0.18)", borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden", animation: "fadeUp 0.3s 0.1s ease both" }}>
-                    <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: "var(--color-jasmine)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
+                  <div style={{ background: "var(--color-accent-tint)", border: "1px solid rgba(94,236,216,0.18)", borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden", animation: "fadeUp 0.3s 0.1s ease both" }}>
+                    <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: "var(--color-accent)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
                     <div style={{ paddingLeft: 14 }}>
-                      <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-sand)", marginBottom: 8 }}>
+                      <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-text-muted)", marginBottom: 8 }}>
                         Подумай
                       </div>
-                      <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-vanilla)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
+                      <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
                         {maxResponse.nudge_question}
                       </p>
                     </div>
@@ -1182,7 +1182,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                       <span style={{
                         fontFamily: "var(--font-body)",
                         fontSize: "var(--text-sm)",
-                        color: "var(--color-text-dim)",
+                        color: "var(--color-text-muted)",
                       }}>
                         Макс думает как объяснить иначе...
                       </span>
@@ -1208,7 +1208,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                       </button>
                       <button onClick={handlePositive} style={{
                         flex: 1,
-                        background: "var(--color-jasmine)",
+                        background: "var(--color-accent)",
                         border: "none",
                         borderRadius: "var(--radius-lg)",
                         padding: "12px var(--space-4)",
@@ -1228,7 +1228,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                 {stepsDone && maxResponse.message && (
                   <>
                     <div style={{
-                      background: "var(--color-jasmine)",
+                      background: "var(--color-accent)",
                       borderRadius: "var(--radius-xl)",
                       padding: "var(--space-5)",
                       animation: "fadeUp 0.35s ease both",
@@ -1264,7 +1264,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
 
                     {/* Score predictor */}
                     <div style={{
-                      background: "var(--color-jasmine-dim)",
+                      background: "var(--color-accent-tint)",
                       border: "1px solid rgba(250,223,127,0.2)",
                       borderRadius: "var(--radius-xl)",
                       padding: "var(--space-5)",
@@ -1275,7 +1275,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                         fontFamily: "var(--font-body)",
                         fontSize: "var(--text-base)",
                         fontWeight: 600,
-                        color: isCorrect ? "var(--color-correct)" : "var(--color-jasmine)",
+                        color: isCorrect ? "var(--color-accent)" : "var(--color-accent)",
                         margin: 0,
                         lineHeight: "var(--leading-normal)",
                       }}>
@@ -1293,7 +1293,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                           style={{
                             display: "flex", alignItems: "center", justifyContent: "center",
                             width: "100%",
-                            background: "var(--color-jasmine)",
+                            background: "var(--color-accent)",
                             color: "var(--color-bg)",
                             border: "none",
                             borderRadius: "var(--radius-lg)",
@@ -1314,7 +1314,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                           display: "flex", alignItems: "center", justifyContent: "center",
                           width: "100%",
                           background: "transparent",
-                          color: "var(--color-text-dim)",
+                          color: "var(--color-text-muted)",
                           border: "none",
                           padding: "10px var(--space-4)",
                           fontFamily: "var(--font-body)",
@@ -1332,9 +1332,9 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
             ) : (
               /* Fallback when no steps */
               <div className="stagger-1" style={{
-                background: isCorrect ? "var(--color-correct-bg)" : "var(--color-surface)",
+                background: isCorrect ? "var(--color-accent-tint)" : "var(--color-surface)",
                 border: isCorrect
-                  ? "1px solid var(--color-correct-border)"
+                  ? "1px solid var(--color-border)"
                   : "1px solid var(--color-border)",
                 borderRadius: "var(--radius-xl)",
                 padding: "var(--space-5)",
@@ -1344,7 +1344,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                 <div style={{
                   position: "absolute", top: 0, left: 0, bottom: 0,
                   width: 3,
-                  background: isCorrect ? "var(--color-correct)" : isWrong ? "var(--color-error)" : "var(--color-fawn)",
+                  background: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)",
                   borderRadius: "3px 0 0 3px",
                   opacity: isCorrect ? 0.7 : 1,
                 }} />
@@ -1354,7 +1354,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                     fontWeight: 700,
                     letterSpacing: "0.07em",
                     textTransform: "uppercase",
-                    color: isCorrect ? "var(--color-correct)" : isWrong ? "var(--color-error)" : "var(--color-fawn)",
+                    color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)",
                     marginBottom: 10,
                   }}>
                     {isCorrect ? "✓ Верно" : isWrong ? "✗ Есть ошибка" : "Ответ"}
@@ -1400,7 +1400,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
               flex: 1,
               display: "flex", alignItems: "center", justifyContent: "center",
               background: "var(--color-surface)",
-              color: "var(--color-fawn)",
+              color: "var(--color-text-secondary)",
               border: "1px solid var(--color-border)",
               borderRadius: "var(--radius-lg)",
               padding: "14px var(--space-5)",
@@ -1471,16 +1471,16 @@ function OnboardingSheet({ onDismiss }) {
         overflow: "hidden",
       }}>
         {/* Decorative math symbols — bottom-right corner, behind text */}
-        <span style={{ position: "absolute", bottom: -8, right: 6,  fontSize: 64, lineHeight: 1, color: "var(--color-jasmine)", opacity: 0.06, transform: "rotate(15deg)", pointerEvents: "none", userSelect: "none" }}>∫</span>
-        <span style={{ position: "absolute", bottom: 8,  right: 64, fontSize: 48, lineHeight: 1, color: "var(--color-jasmine)", opacity: 0.06, transform: "rotate(-8deg)", pointerEvents: "none", userSelect: "none" }}>π</span>
-        <span style={{ position: "absolute", bottom: 4,  right: 36, fontSize: 56, lineHeight: 1, color: "var(--color-jasmine)", opacity: 0.06, transform: "rotate(5deg)",  pointerEvents: "none", userSelect: "none" }}>√</span>
+        <span style={{ position: "absolute", bottom: -8, right: 6,  fontSize: 64, lineHeight: 1, color: "var(--color-accent)", opacity: 0.06, transform: "rotate(15deg)", pointerEvents: "none", userSelect: "none" }}>∫</span>
+        <span style={{ position: "absolute", bottom: 8,  right: 64, fontSize: 48, lineHeight: 1, color: "var(--color-accent)", opacity: 0.06, transform: "rotate(-8deg)", pointerEvents: "none", userSelect: "none" }}>π</span>
+        <span style={{ position: "absolute", bottom: 4,  right: 36, fontSize: 56, lineHeight: 1, color: "var(--color-accent)", opacity: 0.06, transform: "rotate(5deg)",  pointerEvents: "none", userSelect: "none" }}>√</span>
 
         {/* Handwritten equation — top-right corner */}
         <svg
           width="118" height="96"
           viewBox="0 0 118 96"
           style={{ position: "absolute", top: 6, right: 10, opacity: 0.18, pointerEvents: "none", userSelect: "none" }}
-          fill="none" stroke="var(--color-jasmine)" strokeLinecap="round" strokeLinejoin="round"
+          fill="none" stroke="var(--color-accent)" strokeLinecap="round" strokeLinejoin="round"
         >
           {/* x² + 1 */}
           {/* x */}
@@ -1546,7 +1546,7 @@ function OnboardingSheet({ onDismiss }) {
             fontFamily: "var(--font-body)",
             fontSize: "var(--text-base)",
             fontWeight: 500,
-            color: "var(--color-jasmine)",
+            color: "var(--color-accent)",
             marginTop: 4,
           }}>
             Пиши. Фоткай. Понимай.
@@ -1554,7 +1554,7 @@ function OnboardingSheet({ onDismiss }) {
           <div style={{
             fontFamily: "var(--font-body)",
             fontSize: "var(--text-base)",
-            color: "var(--color-text-dim)",
+            color: "var(--color-text-muted)",
             marginTop: 8,
             lineHeight: "var(--leading-normal)",
           }}>
@@ -1569,9 +1569,9 @@ function OnboardingSheet({ onDismiss }) {
               <div style={{
                 width: 28, height: 28,
                 borderRadius: 9,
-                background: "var(--color-jasmine-dim)",
+                background: "var(--color-accent-tint)",
                 border: "1px solid rgba(250,223,127,0.2)",
-                color: "var(--color-jasmine)",
+                color: "var(--color-accent)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontFamily: "var(--font-display)",
                 fontSize: 13, fontWeight: 700,
@@ -1592,7 +1592,7 @@ function OnboardingSheet({ onDismiss }) {
                 <div style={{
                   fontFamily: "var(--font-body)",
                   fontSize: "var(--text-sm)",
-                  color: "var(--color-text-dim)",
+                  color: "var(--color-text-muted)",
                   lineHeight: "var(--leading-normal)",
                 }}>
                   {s.desc}
@@ -1608,7 +1608,7 @@ function OnboardingSheet({ onDismiss }) {
           style={{
             display: "flex", alignItems: "center", justifyContent: "center",
             width: "100%",
-            background: "var(--color-jasmine)",
+            background: "var(--color-accent)",
             color: "var(--color-bg)",
             border: "none",
             borderRadius: "var(--radius-lg)",
