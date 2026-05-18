@@ -788,17 +788,17 @@ function SessionSheet({ session, onClose }) {
 
 const TOPIC_PROBLEMS = {
   "Уравнения":        "Решите уравнение: 2x² - 5x + 3 = 0",
-  "Алгебра":          "Упростите выражение: (a+b)² - (a-b)²",
-  "Геометрия":        "В прямоугольном треугольнике катеты равны 3 и 4. Найдите гипотенузу.",
-  "Тригонометрия":    "Решите уравнение: sin(x) = √2/2 на отрезке [0; 2π]",
-  "Производная":      "Найдите производную функции: f(x) = x³ - 3x² + 2x",
-  "Интеграл":         "Вычислите интеграл: ∫(2x + 1)dx",
-  "Вероятность":      "В урне 3 белых и 5 чёрных шаров. Какова вероятность извлечь белый?",
-  "Неравенства":      "Решите неравенство: x² - 4x - 5 > 0",
-  "Функции":          "Найдите область определения функции: f(x) = √(4 - x²)",
+  "Алгебра":          "Упростите: (a+b)² - (a-b)²",
+  "Геометрия":        "Катеты прямоугольного треугольника равны 3 и 4. Найдите гипотенузу.",
+  "Тригонометрия":    "Решите: sin(x) = √2/2 на отрезке [0; 2π]",
+  "Производная":      "Найдите производную: f(x) = x³ - 3x² + 2x",
+  "Интеграл":         "Вычислите: ∫(2x + 1)dx",
+  "Вероятность":      "В урне 3 белых и 5 чёрных шаров. Найдите вероятность извлечь белый.",
+  "Неравенства":      "Решите: x² - 4x - 5 > 0",
+  "Функции":          "Найдите область определения: f(x) = √(4 - x²)",
   "Числа":            "Найдите НОД чисел 48 и 36",
-  "Статистика":       "Найдите среднее арифметическое: 4, 7, 2, 9, 3",
-  "Текстовая задача": "Поезд прошёл 240 км за 3 часа. Найдите его среднюю скорость.",
+  "Статистика":       "Найдите среднее: 4, 7, 2, 9, 3",
+  "Текстовая задача": "Поезд прошёл 240 км за 3 часа. Найдите среднюю скорость.",
 }
 
 // ─── Practice Sheet ───────────────────────────────────────────────────────────
@@ -1389,27 +1389,25 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
 
                     {/* Post-verdict actions */}
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "fadeUp 0.35s 0.22s ease both" }}>
-                      {maxResponse.topic && TOPIC_PROBLEMS[maxResponse.topic] && (
-                        <button
-                          onClick={() => setShowPractice(true)}
-                          style={{
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            width: "100%",
-                            background: "var(--color-accent)",
-                            color: "var(--color-bg)",
-                            border: "none",
-                            borderRadius: "var(--radius-lg)",
-                            padding: "15px var(--space-6)",
-                            fontFamily: "var(--font-display)",
-                            fontSize: 16, fontWeight: 700,
-                            letterSpacing: "-0.01em",
-                            cursor: "pointer",
-                            boxShadow: "0 4px 24px rgba(250,223,127,0.2)",
-                          }}
-                        >
-                          Ещё такие задачи →
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setShowPractice(true)}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          width: "100%",
+                          background: "var(--color-accent)",
+                          color: "var(--color-bg)",
+                          border: "none",
+                          borderRadius: "var(--radius-lg)",
+                          padding: "15px var(--space-6)",
+                          fontFamily: "var(--font-display)",
+                          fontSize: 16, fontWeight: 700,
+                          letterSpacing: "-0.01em",
+                          cursor: "pointer",
+                          boxShadow: "0 4px 24px rgba(94,236,216,0.2)",
+                        }}
+                      >
+                        Ещё такие задачи →
+                      </button>
                       <button
                         onClick={onReset}
                         style={{
