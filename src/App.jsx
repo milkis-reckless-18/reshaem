@@ -1004,6 +1004,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
   const [negLabel, setNegLabel]         = useState(() => pickRandom(NEGATIVE_LABELS))
   const [localSteps, setLocalSteps]     = useState([])
   const [showPractice, setShowPractice] = useState(false)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   useEffect(() => {
     if (maxResponse) {
@@ -1088,15 +1089,67 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
 
         {/* Thumbnail */}
         {thumbnail && (
-          <div style={{
-            width: 40, height: 40,
-            borderRadius: "var(--radius-sm)",
-            overflow: "hidden",
-            border: "1px solid var(--color-border)",
-            flexShrink: 0,
-          }}>
+          <div
+            onClick={() => setLightboxOpen(true)}
+            style={{
+              width: 40, height: 40,
+              borderRadius: "var(--radius-sm)",
+              overflow: "hidden",
+              border: "1px solid var(--color-border)",
+              flexShrink: 0,
+              cursor: "pointer",
+            }}
+          >
             <img src={thumbnail} alt=""
               style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </div>
+        )}
+
+        {/* Lightbox */}
+        {thumbnail && lightboxOpen && (
+          <div
+            onClick={() => setLightboxOpen(false)}
+            style={{
+              position: "fixed", inset: 0,
+              background: "rgba(0,0,0,0.85)",
+              zIndex: 100,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              animation: "fadeIn 0.2s ease both",
+            }}
+          >
+            {/* X button */}
+            <button
+              onClick={() => setLightboxOpen(false)}
+              style={{
+                position: "absolute", top: 16, right: 16,
+                width: 32, height: 32,
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "#fff",
+                fontSize: 24,
+                lineHeight: 1,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                padding: 0,
+              }}
+              aria-label="Закрыть"
+            >
+              ✕
+            </button>
+            {/* Image — tap does NOT close */}
+            <img
+              src={thumbnail}
+              alt=""
+              onClick={e => e.stopPropagation()}
+              style={{
+                maxWidth: "100%",
+                maxHeight: "100vh",
+                objectFit: "contain",
+                borderRadius: "var(--radius-md)",
+              }}
+            />
           </div>
         )}
 
