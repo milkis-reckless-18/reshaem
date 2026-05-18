@@ -1130,6 +1130,60 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
           </div>
         )}
 
+        {/* Error */}
+        {state === "error" && (
+          <div className="stagger-1" style={{
+            background: "var(--color-error-tint)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-xl)",
+            padding: "var(--space-5)",
+            position: "relative",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              position: "absolute", top: 0, left: 0, bottom: 0,
+              width: 3, background: "var(--color-error)",
+              borderRadius: "3px 0 0 3px",
+            }} />
+            <div style={{ paddingLeft: 12 }}>
+              <p style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-base)",
+                color: "var(--color-text-primary)",
+                margin: "0 0 6px",
+                fontWeight: 600,
+              }}>
+                Что-то пошло не так
+              </p>
+              <p style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-sm)",
+                color: "var(--color-text-muted)",
+                margin: "0 0 16px",
+                lineHeight: "var(--leading-normal)",
+              }}>
+                Не удалось обработать фото. Проверь интернет и попробуй ещё раз.
+              </p>
+              <button
+                onClick={onReset}
+                style={{
+                  background: "var(--color-surface)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-full)",
+                  padding: "8px 18px",
+                  fontFamily: "var(--font-body)",
+                  fontSize: "var(--text-sm)",
+                  fontWeight: 600,
+                  color: "var(--color-text-primary)",
+                  cursor: "pointer",
+                }}
+              >
+                Попробовать снова
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Done — Макс response */}
         {state === "done" && maxResponse && (
           <>
@@ -1370,7 +1424,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
         />
       )}
 
-      {/* Bottom action — only for error/uncertain states */}
+      {/* Bottom action — only for ocr_uncertain state */}
       {state === "ocr_uncertain" && (
         <div className="stagger-3" style={{
           position: "absolute", bottom: 0, left: 0, right: 0,
@@ -1653,20 +1707,32 @@ export default function App() {
     let sessionRow = null
 
     try {
-      const base64 = await new Promise((resolve, reject) => {
+      const { base64, thumbBase64 } = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onerror = reject
         reader.onload = () => {
           const img = new Image()
           img.onerror = reject
           img.onload = () => {
+            // Full resolution for OCR (max 1200px)
             const MAX = 1200
             const scale = img.width > MAX ? MAX / img.width : 1
             const canvas = document.createElement("canvas")
             canvas.width  = Math.round(img.width  * scale)
             canvas.height = Math.round(img.height * scale)
             canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height)
-            resolve(canvas.toDataURL("image/jpeg", 0.92))
+            const base64 = canvas.toDataURL("image/jpeg", 0.92)
+
+            // Small thumbnail for DB storage (max 100px)
+            const THUMB = 100
+            const ts = img.width > THUMB ? THUMB / img.width : 1
+            const tc = document.createElement("canvas")
+            tc.width  = Math.round(img.width  * ts)
+            tc.height = Math.round(img.height * ts)
+            tc.getContext("2d").drawImage(img, 0, 0, tc.width, tc.height)
+            const thumbBase64 = tc.toDataURL("image/jpeg", 0.75)
+
+            resolve({ base64, thumbBase64 })
           }
           img.src = reader.result
         }
@@ -1676,7 +1742,7 @@ export default function App() {
       if (userId) {
         const { data: row, error } = await supabase
           .from("sessions")
-          .insert({ user_id: userId, image_url: base64 })
+          .insert({ user_id: userId, image_url: thumbBase64 })
           .select("id, image_url, created_at")
           .single()
         if (!error && row) {
@@ -1726,7 +1792,7 @@ export default function App() {
       if (!sessionRow && userId) {
         setHistory(prev => [{ id: Date.now(), image_url: localUrl, created_at: new Date().toISOString() }, ...prev])
       }
-      setExplanationState("idle")
+      setExplanationState("error")
     }
   }, [userId])
 
