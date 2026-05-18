@@ -5,11 +5,7 @@ const fs = require('fs')
 const path = require('path')
 
 const app = express()
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}))
+app.use(cors({ origin: '*' }))
 app.options('*', cors())
 app.use(express.json({ limit: '10mb' }))
 
