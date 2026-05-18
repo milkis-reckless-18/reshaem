@@ -1692,6 +1692,7 @@ export default function App() {
       .select("id, image_url, created_at")
       .eq("user_id", uid)
       .not("image_url", "is", null)
+      .not("image_url", "like", "data:%")
       .order("created_at", { ascending: false })
     if (!error && data) setHistory(data)
     setHistoryLoading(false)
@@ -1707,14 +1708,14 @@ export default function App() {
     let sessionRow = null
 
     try {
-      const { base64, thumbBase64 } = await new Promise((resolve, reject) => {
+      // Resize image to max 1200px → blob (for Storage) + base64 (OCR fallback)
+      const { blob, base64 } = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onerror = reject
         reader.onload = () => {
           const img = new Image()
           img.onerror = reject
           img.onload = () => {
-            // Full resolution for OCR (max 1200px)
             const MAX = 1200
             const scale = img.width > MAX ? MAX / img.width : 1
             const canvas = document.createElement("canvas")
@@ -1722,37 +1723,48 @@ export default function App() {
             canvas.height = Math.round(img.height * scale)
             canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height)
             const base64 = canvas.toDataURL("image/jpeg", 0.92)
-
-            // Small thumbnail for DB storage (max 100px)
-            const THUMB = 100
-            const ts = img.width > THUMB ? THUMB / img.width : 1
-            const tc = document.createElement("canvas")
-            tc.width  = Math.round(img.width  * ts)
-            tc.height = Math.round(img.height * ts)
-            tc.getContext("2d").drawImage(img, 0, 0, tc.width, tc.height)
-            const thumbBase64 = tc.toDataURL("image/jpeg", 0.75)
-
-            resolve({ base64, thumbBase64 })
+            canvas.toBlob(blob => {
+              if (!blob) reject(new Error("Canvas toBlob failed"))
+              else resolve({ blob, base64 })
+            }, "image/jpeg", 0.92)
           }
           img.src = reader.result
         }
         reader.readAsDataURL(file)
       })
 
+      let imageUrl = null
+      let ocrPayload = { image: base64 }
+
       if (userId) {
+        // Upload resized image to Supabase Storage
+        const path = `${userId}/${Date.now()}.jpg`
+        const { error: uploadError } = await supabase.storage
+          .from("solution-images")
+          .upload(path, blob, { contentType: "image/jpeg" })
+
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from("solution-images")
+            .getPublicUrl(path)
+          imageUrl = publicUrl
+          ocrPayload = { url: publicUrl }
+        }
+
         const { data: row, error } = await supabase
           .from("sessions")
-          .insert({ user_id: userId, image_url: thumbBase64 })
+          .insert({ user_id: userId, image_url: imageUrl })
           .select("id, image_url, created_at")
           .single()
         if (!error && row) {
           sessionRow = row
-          setHistory(prev => [row, ...prev])
+          // Use local blob URL for immediate display; Storage URL used on next load
+          setHistory(prev => [{ ...row, image_url: localUrl }, ...prev])
         }
       }
 
       const { data: ocrData, error: ocrError } = await supabase.functions.invoke("ocr", {
-        body: { image: base64 },
+        body: ocrPayload,
       })
       if (ocrError) throw ocrError
 
