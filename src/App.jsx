@@ -434,7 +434,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
     <div style={{
       display: "flex", flexDirection: "column",
       height: "100dvh", background: "var(--color-bg)",
-      overflow: "hidden", position: "relative",
+      position: "relative",
       maxWidth: 480, margin: "0 auto",
     }}>
       <MathBackground />
@@ -447,18 +447,15 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
         />
       </header>
 
-      {/* Scrollable body */}
-      <div style={{
-        flex: 1, overflowY: "auto", overflowX: "hidden",
-        padding: "4px var(--screen-px) 0",
-      }}>
-        {/* Hidden file inputs */}
-        <input ref={cameraInputRef}  type="file" accept="image/*" capture="environment"
-          onChange={handleChange} style={{ display: "none" }} />
-        <input ref={galleryInputRef} type="file" accept="image/*"
-          onChange={handleChange} style={{ display: "none" }} />
+      {/* Hidden file inputs */}
+      <input ref={cameraInputRef}  type="file" accept="image/*" capture="environment"
+        onChange={handleChange} style={{ display: "none" }} />
+      <input ref={galleryInputRef} type="file" accept="image/*"
+        onChange={handleChange} style={{ display: "none" }} />
 
-        {/* Viewfinder */}
+      <div className="camera-body">
+      {/* Viewfinder — pinned, never scrolls away */}
+      <div className="camera-vf-wrap">
         <div
           onClick={() => cameraInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
@@ -545,9 +542,11 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
             <GalleryIcon />
           </button>
         </div>
+      </div>{/* /camera-vf-wrap */}
 
-        {/* History */}
-        <div style={{ marginTop: 28, paddingBottom: 40 }}>
+      {/* History — scrollable below viewfinder */}
+      <div className="camera-hist-wrap">
+        <div style={{ marginTop: 20, paddingBottom: 32 }}>
           <p style={{
             fontFamily: "var(--font-body)",
             fontSize: "var(--text-xs)",
@@ -596,7 +595,8 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
             )}
           </div>
         </div>
-      </div>
+      </div>{/* /camera-hist-wrap */}
+      </div>{/* /camera-body */}
 
     </div>
   )

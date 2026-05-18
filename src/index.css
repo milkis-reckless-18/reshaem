@@ -142,3 +142,35 @@ body::before {
 
 .camera-only { display: none; }
 @media (max-width: 768px) { .camera-only { display: flex; } }
+
+/* Camera screen responsive layout */
+.camera-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.camera-vf-wrap {
+  flex-shrink: 0;
+  padding: 4px var(--screen-px) 0;
+}
+.camera-hist-wrap {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0 var(--screen-px);
+}
+@media (min-width: 769px) {
+  .camera-vf-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px var(--screen-px);
+  }
+  .camera-hist-wrap {
+    flex: 0 0 auto;
+    max-height: 210px;
+  }
+}
