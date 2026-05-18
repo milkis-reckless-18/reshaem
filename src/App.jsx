@@ -7,14 +7,38 @@ import reshaemLogo from "./assets/reshaem-logo.svg"
 function preprocessForTTS(text) {
   const ordinals = { '2': 'второй', '3': 'третьей', '4': 'четвёртой' }
   return text
+    // Fractions
     .replace(/1\/2/g, 'одна вторая')
     .replace(/1\/4/g, 'одна четвёртая')
     .replace(/1\/3/g, 'одна третья')
     .replace(/3\/2/g, 'три вторых')
     .replace(/2\/4/g, 'две четвёртых')
+    // Exponents
     .replace(/x\^(\d+)/g, (_, n) => `икс во ${ordinals[n] ?? n} степени`)
     .replace(/x\^\(([^)]+)\)/g, (_, c) => `икс в степени ${c}`)
+    // Compound trig — must come before generic sin/cos patterns
+    .replace(/cos\s*([A-Za-z])\s*·\s*cos\s*([A-Za-z])/g, (_, a, b) => `косинус ${a} умножить на косинус ${b}`)
+    .replace(/sin\s*([A-Za-z])\s*·\s*sin\s*([A-Za-z])/g, (_, a, b) => `синус ${a} умножить на синус ${b}`)
+    .replace(/cos\(([^-+)]+)\s*\+\s*([^)]+)\)/g, (_, a, b) => `косинус суммы ${a.trim()} и ${b.trim()}`)
+    .replace(/cos\(([^-+)]+)\s*-\s*([^)]+)\)/g, (_, a, b) => `косинус разности ${a.trim()} и ${b.trim()}`)
+    // Single-letter trig — must come before generic cos(/sin(/tan(
+    .replace(/cos\s+([A-Za-z])\b/g, (_, a) => `косинус ${a}`)
+    .replace(/cos([A-Za-z])\b/g, (_, a) => `косинус ${a}`)
+    .replace(/sin\s+([A-Za-z])\b/g, (_, a) => `синус ${a}`)
+    .replace(/sin([A-Za-z])\b/g, (_, a) => `синус ${a}`)
+    .replace(/tan\s+([A-Za-z])\b/g, (_, a) => `тангенс ${a}`)
+    .replace(/tan([A-Za-z])\b/g, (_, a) => `тангенс ${a}`)
+    // Generic trig/log functions with opening paren
+    .replace(/cos\(/g, 'косинус от ')
+    .replace(/sin\(/g, 'синус от ')
+    .replace(/tan\(/g, 'тангенс от ')
+    .replace(/ln\(/g, 'натуральный логарифм от ')
+    .replace(/log\(/g, 'логарифм от ')
+    // sqrt
     .replace(/sqrt\(/g, 'корень из ')
+    // Middle dot (after compound trig patterns consumed theirs)
+    .replace(/·/g, ' умножить на ')
+    // Comparators
     .replace(/=>/g, 'следовательно')
     .replace(/>=/g, 'больше или равно')
     .replace(/<=/g, 'меньше или равно')
