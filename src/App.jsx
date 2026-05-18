@@ -490,21 +490,44 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
   const cameraInputRef  = useRef(null)
   const galleryInputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
+  // Keep a ref to onUpload so the native listener always sees the latest value
+  // even if the component re-renders while the iOS camera is in the foreground.
+  const onUploadRef = useRef(onUpload)
+  useEffect(() => { onUploadRef.current = onUpload }, [onUpload])
 
   const handleFile = useCallback((file) => {
     if (!file || !file.type.startsWith("image/")) return
-    onUpload(file)
-  }, [onUpload])
+    onUploadRef.current(file)
+  }, [])
+
+  // Native listeners — more reliable than React onChange on iOS Safari.
+  // When the camera overlay takes the page to the background, React may
+  // re-render and replace the DOM input node; native listeners survive that.
+  useEffect(() => {
+    const cam = cameraInputRef.current
+    const gal = galleryInputRef.current
+    const onCamChange = (e) => {
+      const file = e.target.files?.[0]
+      if (file) handleFile(file)
+      setTimeout(() => { if (cam) cam.value = "" }, 0)
+    }
+    const onGalChange = (e) => {
+      const file = e.target.files?.[0]
+      if (file) handleFile(file)
+      setTimeout(() => { if (gal) gal.value = "" }, 0)
+    }
+    cam?.addEventListener("change", onCamChange)
+    gal?.addEventListener("change", onGalChange)
+    return () => {
+      cam?.removeEventListener("change", onCamChange)
+      gal?.removeEventListener("change", onGalChange)
+    }
+  }, [handleFile])
 
   const handleDrop = (e) => {
     e.preventDefault()
     setDragging(false)
     handleFile(e.dataTransfer.files[0])
-  }
-
-  const handleChange = (e) => {
-    handleFile(e.target.files[0])
-    e.target.value = ""
   }
 
   const brackets = [
@@ -531,11 +554,11 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
         />
       </header>
 
-      {/* Hidden file inputs */}
+      {/* Hidden file inputs — onChange handled via native listeners in useEffect */}
       <input ref={cameraInputRef}  type="file" accept="image/*" capture="environment"
-        onChange={handleChange} style={{ display: "none" }} />
+        style={{ display: "none" }} />
       <input ref={galleryInputRef} type="file" accept="image/*"
-        onChange={handleChange} style={{ display: "none" }} />
+        style={{ display: "none" }} />
 
       <div className="camera-body">
       {/* Viewfinder — pinned, never scrolls away */}
@@ -855,6 +878,8 @@ function PracticeSheet({ topic, onUpload, onClose }) {
   const [dragging, setDragging] = useState(false)
   const cameraRef  = useRef(null)
   const galleryRef = useRef(null)
+  const onUploadRef = useRef(onUpload)
+  useEffect(() => { onUploadRef.current = onUpload }, [onUpload])
 
   const problem = TOPIC_PROBLEMS[topic] ?? "Реши задачу по этой теме"
 
@@ -868,13 +893,33 @@ function PracticeSheet({ topic, onUpload, onClose }) {
     setTimeout(onClose, 350)
   }
 
-  const handleFile = (file) => {
+  const handleFile = useCallback((file) => {
     if (!file || !file.type.startsWith("image/")) return
     setVisible(false)
-    onUpload(file)
-  }
+    onUploadRef.current(file)
+  }, [])
 
-  const handleChange = (e) => { handleFile(e.target.files[0]); e.target.value = "" }
+  // Native listeners for iOS Safari reliability (same reasoning as CameraScreen)
+  useEffect(() => {
+    const cam = cameraRef.current
+    const gal = galleryRef.current
+    const onCamChange = (e) => {
+      const file = e.target.files?.[0]
+      if (file) handleFile(file)
+      setTimeout(() => { if (cam) cam.value = "" }, 0)
+    }
+    const onGalChange = (e) => {
+      const file = e.target.files?.[0]
+      if (file) handleFile(file)
+      setTimeout(() => { if (gal) gal.value = "" }, 0)
+    }
+    cam?.addEventListener("change", onCamChange)
+    gal?.addEventListener("change", onGalChange)
+    return () => {
+      cam?.removeEventListener("change", onCamChange)
+      gal?.removeEventListener("change", onGalChange)
+    }
+  }, [handleFile])
 
   const handleDrop = (e) => {
     e.preventDefault()
@@ -950,11 +995,11 @@ function PracticeSheet({ topic, onUpload, onClose }) {
           {problem}
         </p>
 
-        {/* Hidden inputs */}
+        {/* Hidden inputs — onChange handled via native listeners in useEffect */}
         <input ref={cameraRef}  type="file" accept="image/*" capture="environment"
-          onChange={handleChange} style={{ display: "none" }} />
+          style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*"
-          onChange={handleChange} style={{ display: "none" }} />
+          style={{ display: "none" }} />
 
         {/* Viewfinder */}
         <div
