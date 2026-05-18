@@ -1708,7 +1708,7 @@ export default function App() {
     let sessionRow = null
 
     try {
-      // Resize image to max 1200px → blob (for Storage) + base64 (OCR fallback)
+      // Resize to max 1200px → base64 (for OCR) + blob (for Storage)
       const { blob, base64 } = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onerror = reject
@@ -1733,38 +1733,30 @@ export default function App() {
         reader.readAsDataURL(file)
       })
 
-      let imageUrl = null
-      let ocrPayload = { image: base64 }
-
       if (userId) {
-        // Upload resized image to Supabase Storage
+        // Compute public URL synchronously — no network call needed
         const path = `${userId}/${Date.now()}.jpg`
-        const { error: uploadError } = await supabase.storage
-          .from("solution-images")
-          .upload(path, blob, { contentType: "image/jpeg" })
+        const { data: { publicUrl } } = supabase.storage.from("solution-images").getPublicUrl(path)
 
-        if (!uploadError) {
-          const { data: { publicUrl } } = supabase.storage
-            .from("solution-images")
-            .getPublicUrl(path)
-          imageUrl = publicUrl
-          ocrPayload = { url: publicUrl }
-        }
+        // Fire-and-forget Storage upload — not on critical path
+        supabase.storage.from("solution-images")
+          .upload(path, blob, { contentType: "image/jpeg" })
+          .catch(err => console.warn("Storage upload failed:", err.message))
 
         const { data: row, error } = await supabase
           .from("sessions")
-          .insert({ user_id: userId, image_url: imageUrl })
+          .insert({ user_id: userId, image_url: publicUrl })
           .select("id, image_url, created_at")
           .single()
         if (!error && row) {
           sessionRow = row
-          // Use local blob URL for immediate display; Storage URL used on next load
           setHistory(prev => [{ ...row, image_url: localUrl }, ...prev])
         }
       }
 
+      // Send base64 directly to OCR — no Storage round trip
       const { data: ocrData, error: ocrError } = await supabase.functions.invoke("ocr", {
-        body: ocrPayload,
+        body: { image: base64 },
       })
       if (ocrError) throw ocrError
 

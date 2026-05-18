@@ -9,37 +9,17 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json()
+    const { image } = await req.json()
 
-    // Accept { url: storageUrl } or { image: base64 }
-    let imageData: string
-
-    if (body.url) {
-      const fetchCtrl = new AbortController()
-      const fetchTimeout = setTimeout(() => fetchCtrl.abort(), 8000)
-
-      const imgRes = await fetch(body.url, { signal: fetchCtrl.signal })
-      clearTimeout(fetchTimeout)
-
-      if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`)
-
-      const arrayBuf = await imgRes.arrayBuffer()
-      const uint8 = new Uint8Array(arrayBuf)
-
-      // Convert to base64 in chunks to avoid stack overflow on large images
-      const chunkSize = 8192
-      let binary = ''
-      for (let i = 0; i < uint8.length; i += chunkSize) {
-        binary += String.fromCharCode(...uint8.subarray(i, i + chunkSize))
-      }
-      const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
-      imageData = `data:${contentType};base64,${btoa(binary)}`
-    } else {
-      imageData = body.image
+    if (!image) {
+      return new Response(
+        JSON.stringify({ error: 'Missing image field', confidence_flag: 'ocr_uncertain' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      )
     }
 
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10000)
+    const timeout = setTimeout(() => controller.abort(), 8000)
 
     const mathpixRes = await fetch('https://api.mathpix.com/v3/text', {
       method: 'POST',
@@ -49,7 +29,7 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        src: imageData,
+        src: image,
         formats: ['latex_styled'],
         data_options: { include_svg: false },
       }),
