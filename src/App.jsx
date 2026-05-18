@@ -319,14 +319,14 @@ function hasMath(text) {
   return text && /[\\^]|sqrt|frac|=/.test(text)
 }
 
-function MathField({ text, style }) {
+function MathField({ text }) {
   if (!text) return null
-  if (!hasMath(text)) return <span style={style}>{text}</span>
+  if (!hasMath(text)) return <>{text}</>
   try {
     const html = renderToString(text, { displayMode: false, throwOnError: false, output: "html" })
-    return <span style={style} dangerouslySetInnerHTML={{ __html: html }} />
+    return <span dangerouslySetInnerHTML={{ __html: html }} />
   } catch {
-    return <span style={style}>{text}</span>
+    return <>{text}</>
   }
 }
 
@@ -370,31 +370,39 @@ function StepCard({ step, index }) {
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        {/* student_work — strikethrough if incorrect, correction in green */}
+        {/* student_work — own isolated div, strikethrough via CSS wrapper */}
         <div style={{
           fontFamily: "var(--font-body)",
           fontStyle: "italic",
           fontSize: "var(--text-md)",
           lineHeight: "var(--leading-tight)",
-          marginBottom: step.explanation ? 6 : 0,
+          marginBottom: (isError && step.correction) || step.explanation ? 4 : 0,
         }}>
-          <MathField
-            text={step.student_work}
-            style={{
-              color: isError ? "var(--color-error)" : "var(--color-text-primary)",
-              textDecoration: isError ? "line-through" : "none",
-              textDecorationColor: "rgba(201,123,106,0.5)",
-            }}
-          />
-          {isError && step.correction && (
-            <MathField
-              text={step.correction}
-              style={{ color: "var(--color-accent)", marginLeft: 8 }}
-            />
-          )}
+          <span style={{
+            color: isError ? "var(--color-error)" : "var(--color-text-primary)",
+            textDecoration: isError ? "line-through" : "none",
+            textDecorationColor: "rgba(201,123,106,0.5)",
+          }}>
+            <MathField text={step.student_work || ''} />
+          </span>
         </div>
 
-        {/* Explanation */}
+        {/* correction — separate div below, never inline with student_work */}
+        {isError && step.correction && (
+          <div style={{
+            fontFamily: "var(--font-body)",
+            fontStyle: "italic",
+            fontSize: "var(--text-md)",
+            lineHeight: "var(--leading-tight)",
+            marginBottom: step.explanation ? 4 : 0,
+          }}>
+            <span style={{ color: "var(--color-accent)" }}>
+              <MathField text={step.correction} />
+            </span>
+          </div>
+        )}
+
+        {/* explanation — completely separate div, plain text only */}
         {step.explanation && (
           <div style={{
             fontSize: "var(--text-sm)",
