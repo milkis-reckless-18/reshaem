@@ -323,7 +323,7 @@ function MathField({ text }) {
   if (!text) return null
   if (!hasMath(text)) return <>{text}</>
   try {
-    const html = renderToString(text, { displayMode: false, throwOnError: false, output: "html" })
+    const html = renderToString(text, { displayMode: false, throwOnError: true, output: "html" })
     return <span dangerouslySetInnerHTML={{ __html: html }} />
   } catch {
     return <>{text}</>
@@ -331,8 +331,9 @@ function MathField({ text }) {
 }
 
 function StepCard({ step, index }) {
-  const isCorrect = step.is_correct === true
-  const isError   = step.is_correct === false
+  const isCorrect  = step.is_correct === true
+  const isError    = step.is_correct === false
+  const cleanWork  = String(step.student_work || '').trim()
 
   return (
     <div style={{
@@ -376,14 +377,14 @@ function StepCard({ step, index }) {
           fontStyle: "italic",
           fontSize: "var(--text-md)",
           lineHeight: "var(--leading-tight)",
-          marginBottom: (isError && step.correction) || step.explanation ? 4 : 0,
+          marginBottom: (isError && step.correction) ? 4 : 0,
         }}>
           <span style={{
             color: isError ? "var(--color-error)" : "var(--color-text-primary)",
             textDecoration: isError ? "line-through" : "none",
             textDecorationColor: "rgba(201,123,106,0.5)",
           }}>
-            <MathField text={step.student_work || ''} />
+            <MathField text={cleanWork} />
           </span>
         </div>
 
@@ -397,14 +398,15 @@ function StepCard({ step, index }) {
             marginBottom: step.explanation ? 4 : 0,
           }}>
             <span style={{ color: "var(--color-accent)" }}>
-              <MathField text={step.correction} />
+              <MathField text={String(step.correction).trim()} />
             </span>
           </div>
         )}
 
-        {/* explanation — completely separate div, plain text only */}
+        {/* explanation — completely separate div, plain text only, always spaced from above */}
         {step.explanation && (
           <div style={{
+            marginTop: 8,
             fontSize: "var(--text-sm)",
             color: "var(--color-text-muted)",
             lineHeight: "var(--leading-normal)",
