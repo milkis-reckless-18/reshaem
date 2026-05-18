@@ -1,5 +1,6 @@
 ﻿import { useState, useRef, useCallback, useEffect } from "react"
 import { supabase } from "./lib/supabase"
+import reshaemLogo from "./assets/reshaem-logo.svg"
 
 // Shared AudioContext — created once, reused across all TTS buttons.
 // Calling ctx.resume() synchronously inside a user-gesture handler captures
@@ -439,26 +440,11 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
       <MathBackground />
       {/* Header */}
       <header style={{ padding: "20px var(--screen-px) 12px", flexShrink: 0 }}>
-        <h1 style={{
-          margin: 0,
-          fontFamily: "var(--font-display)",
-          fontSize: "var(--text-2xl)",
-          fontWeight: 700,
-          letterSpacing: "var(--tracking-tight)",
-          color: "var(--color-accent)",
-          lineHeight: "var(--leading-tight)",
-        }}>
-          Решаем
-        </h1>
-        <p style={{
-          margin: "4px 0 0",
-          fontFamily: "var(--font-body)",
-          fontSize: "var(--text-sm)",
-          color: "var(--color-text-muted)",
-          letterSpacing: "0.04em",
-        }}>
-          Пиши. Фоткай. Понимай.
-        </p>
+        <img
+          src={reshaemLogo}
+          alt="Решаем"
+          style={{ height: 72, width: "auto", display: "block", maxWidth: "100%" }}
+        />
       </header>
 
       {/* Scrollable body */}
