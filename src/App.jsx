@@ -1518,34 +1518,11 @@ function OnboardingSheet({ onDismiss }) {
 
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
-          <div style={{
-            fontFamily: "var(--font-display)",
-            fontSize: "var(--text-2xl)",
-            fontWeight: 700,
-            letterSpacing: "var(--tracking-tight)",
-            color: "var(--color-text-primary)",
-            lineHeight: "var(--leading-tight)",
-          }}>
-            Решаем
-          </div>
-          <div style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-base)",
-            fontWeight: 500,
-            color: "var(--color-accent)",
-            marginTop: 4,
-          }}>
-            Пиши. Фоткай. Понимай.
-          </div>
-          <div style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-base)",
-            color: "var(--color-text-muted)",
-            marginTop: 8,
-            lineHeight: "var(--leading-normal)",
-          }}>
-            Ошибка? Хорошо. Разберёмся вместе.
-          </div>
+          <img
+            src={reshaemLogo}
+            alt="Решаем"
+            style={{ height: 80, width: "auto", display: "block", maxWidth: "100%" }}
+          />
         </div>
 
         {/* Steps */}
