@@ -1872,29 +1872,25 @@ export default function App() {
 
       setOcrLatex(latex)
 
-      if (confidence_flag === "ocr_uncertain") {
-        setExplanationState("ocr_uncertain")
-      } else {
-        setExplanationState("ocr_done")
+      setExplanationState("ocr_done")
 
-        const { data: explainData, error: explainError } = await supabase.functions.invoke("explain", {
-          body: { latex },
-        })
-        if (explainError) throw explainError
+      const { data: explainData, error: explainError } = await supabase.functions.invoke("explain", {
+        body: { latex, confidence_flag },
+      })
+      if (explainError) throw explainError
 
-        // Fire-and-forget — DB persistence doesn't block the user
-        if (sessionRow?.id) {
-          supabase.from("sessions").update({
-            explanation: explainData.message,
-            topic: explainData.topic,
-            is_correct: explainData.is_correct,
-            nudge_question: explainData.nudge_question,
-          }).eq("id", sessionRow.id).then(null, () => {})
-        }
-
-        setMaxResponse(explainData)
-        setExplanationState("done")
+      // Fire-and-forget — DB persistence doesn't block the user
+      if (sessionRow?.id) {
+        supabase.from("sessions").update({
+          explanation: explainData.message,
+          topic: explainData.topic,
+          is_correct: explainData.is_correct,
+          nudge_question: explainData.nudge_question,
+        }).eq("id", sessionRow.id).then(null, () => {})
       }
+
+      setMaxResponse(explainData)
+      setExplanationState("done")
 
     } catch (err) {
       console.error("Upload/OCR error:", err.message)

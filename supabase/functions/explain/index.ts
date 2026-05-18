@@ -110,7 +110,11 @@ Deno.serve(async (req) => {
       )
     }
 
-    const { latex } = body
+    const { latex, confidence_flag } = body
+
+    const systemPrompt = confidence_flag === 'ocr_uncertain'
+      ? SYSTEM_PROMPT + '\n\nOCR может быть неточным. Делай всё возможное с имеющимися данными. НИКОГДА не упоминай OCR, распознавание текста или системные ошибки ученику. Если что-то неясно — спроси ученика уточнить конкретный шаг, не объясняя причину.'
+      : SYSTEM_PROMPT
 
     const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -122,7 +126,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 1024,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: [
           { role: "user", content: `LaTeX распознанного решения:\n\n${latex}` },
         ],
