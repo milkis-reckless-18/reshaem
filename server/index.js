@@ -13,11 +13,8 @@ app.use(cors({
 app.options('*', cors())
 app.use(express.json({ limit: '10mb' }))
 
-// Load system prompt — works whether Railway runs from repo root or server/
-const promptPath = fs.existsSync(path.join(__dirname, '..', 'claude_system_prompt.md'))
-  ? path.join(__dirname, '..', 'claude_system_prompt.md')
-  : path.join(process.cwd(), 'claude_system_prompt.md')
-const promptMd = fs.readFileSync(promptPath, 'utf8')
+// Load system prompt from same directory as this file
+const promptMd = fs.readFileSync(path.join(__dirname, 'claude_system_prompt.md'), 'utf8')
 const promptMatch = promptMd.match(/```\n([\s\S]+?)\n```/)
 const SYSTEM_PROMPT = promptMatch ? promptMatch[1] : ''
 
