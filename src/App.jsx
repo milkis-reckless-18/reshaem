@@ -1,5 +1,5 @@
-﻿import { useState, useRef, useCallback, useEffect } from "react"
-import { renderToString } from "katex"
+﻿import { useState, useRef, useCallback, useEffect, Component } from "react"
+import katex from "katex"
 import { supabase } from "./lib/supabase"
 import reshaemLogo from "./assets/reshaem-logo.svg"
 
@@ -321,26 +321,139 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
   )
 }
 
-// ─── Step Card ────────────────────────────────────────────────────────────────
-
 // ─── KaTeX Math Renderer ──────────────────────────────────────────────────────
 
 function hasMath(text) {
-  // Only attempt KaTeX for actual LaTeX commands (backslash + letter).
-  // Plain algebraic text like "x = 5" or "2x^2 + 1" must render as plain text
-  // because KaTeX math mode silently strips all spaces, causing words to run together.
-  return text && /\\[a-zA-Z]/.test(text)
+  if (!text) return false
+  return (
+    /\\[a-zA-Z]/.test(text) ||
+    /[_^]\{/.test(text) ||
+    /\\\(/.test(text) ||
+    /\\\[/.test(text)
+  )
 }
 
+// Pure-math field: renders via katex.render() into a ref so no dangerouslySetInnerHTML.
+// throwOnError: false means KaTeX renders what it can and shows errors inline rather than throwing.
 function MathField({ text }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!ref.current || !text) return
+    if (!hasMath(text)) {
+      ref.current.textContent = text
+      return
+    }
+    try {
+      katex.render(text, ref.current, { throwOnError: false, errorColor: 'inherit', output: 'html' })
+    } catch (e) {
+      ref.current.textContent = text
+    }
+  }, [text])
   if (!text) return null
-  if (!hasMath(text)) return <>{text}</>
-  try {
-    const html = renderToString(text, { displayMode: false, throwOnError: true, output: "html" })
-    return <span dangerouslySetInnerHTML={{ __html: html }} />
-  } catch {
-    return <>{text}</>
+  return <span ref={ref} />
+}
+
+// Mixed-content field: explanation text may contain $inline$ or $$display$$ math.
+// Builds DOM nodes imperatively so plain-text segments are safe text nodes, never innerHTML.
+function InlineText({ text }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    while (el.firstChild) el.removeChild(el.firstChild)
+    if (!text) return
+    if (!text.includes('$')) {
+      el.textContent = text
+      return
+    }
+    const parts = text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g)
+    parts.forEach(part => {
+      const isDisplay = part.startsWith('$$') && part.endsWith('$$')
+      const isInline  = !isDisplay && part.startsWith('$') && part.endsWith('$')
+      if (isDisplay || isInline) {
+        const latex = part.slice(isDisplay ? 2 : 1, isDisplay ? -2 : -1)
+        const span = document.createElement('span')
+        try {
+          katex.render(latex, span, { throwOnError: false, errorColor: 'inherit', displayMode: isDisplay, output: 'html' })
+        } catch (e) {
+          span.textContent = part
+        }
+        el.appendChild(span)
+      } else {
+        el.appendChild(document.createTextNode(part))
+      }
+    })
+  }, [text])
+  if (!text) return null
+  return <span ref={ref} />
+}
+
+// Error boundary: isolates a single step card so a KaTeX crash can't tear down the whole screen.
+class StepCardErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
   }
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+  render() {
+    if (this.state.hasError) return null
+    return this.props.children
+  }
+}
+
+// ─── Step Card ────────────────────────────────────────────────────────────────
+
+function SkeletonBar({ width, height = 12 }) {
+  return (
+    <div style={{
+      width, height,
+      borderRadius: 6,
+      background: "var(--color-card)",
+      animation: "skeletonPulse 1.6s ease-in-out infinite",
+    }} />
+  )
+}
+
+function SkeletonStepCard({ index }) {
+  return (
+    <div style={{
+      background: "var(--color-surface)",
+      border: "1px solid var(--color-border)",
+      borderRadius: "var(--radius-lg)",
+      padding: "14px 16px",
+      display: "flex",
+      gap: 12,
+      alignItems: "flex-start",
+      animation: `fadeUp 0.3s ${0.05 + index * 0.07}s ease both`,
+    }}>
+      {/* Step number badge placeholder */}
+      <div style={{
+        width: 28, height: 28,
+        borderRadius: 9,
+        background: "var(--color-card)",
+        flexShrink: 0,
+        animation: "skeletonPulse 1.6s ease-in-out infinite",
+      }} />
+
+      {/* Content placeholder bars */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8, paddingTop: 4 }}>
+        <SkeletonBar width="55%" height={13} />
+        <SkeletonBar width="80%" height={11} />
+        <SkeletonBar width="65%" height={11} />
+      </div>
+
+      {/* Play button placeholder */}
+      <div style={{
+        width: 28, height: 28,
+        borderRadius: "50%",
+        background: "var(--color-card)",
+        flexShrink: 0,
+        animation: "skeletonPulse 1.6s ease-in-out infinite",
+      }} />
+    </div>
+  )
 }
 
 function StepCard({ step, index }) {
@@ -418,7 +531,7 @@ function StepCard({ step, index }) {
           </div>
         )}
 
-        {/* explanation — completely separate div, plain text only, always spaced from above */}
+        {/* explanation — completely separate div, always spaced from above */}
         {step.explanation && (
           <div style={{
             marginTop: 8,
@@ -426,7 +539,7 @@ function StepCard({ step, index }) {
             color: "var(--color-text-muted)",
             lineHeight: "var(--leading-normal)",
           }}>
-            {step.explanation}
+            <InlineText text={step.explanation} />
           </div>
         )}
       </div>
@@ -863,7 +976,9 @@ function SessionSheet({ session, onClose }) {
             {steps.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {steps.map((step, i) => (
-                  <StepCard key={step.step_number ?? i} step={step} index={i} />
+                  <StepCardErrorBoundary key={step.step_number ?? i}>
+                    <StepCard step={step} index={i} />
+                  </StepCardErrorBoundary>
                 ))}
               </div>
             )}
@@ -892,7 +1007,7 @@ function SessionSheet({ session, onClose }) {
                     {isCorrect ? "✓ Верно" : isWrong ? "✗ Есть ошибка" : "Комментарий"}
                   </div>
                   <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-loose)" }}>
-                    {detail.explanation}
+                    <InlineText text={detail.explanation} />
                   </p>
                 </div>
               </div>
@@ -1046,7 +1161,9 @@ function PracticeSheet({ topic, onUpload, onClose }) {
   useEffect(() => { onUploadRef.current = onUpload }, [onUpload])
   useEffect(() => { onCloseRef.current  = onClose  }, [onClose])
 
-  const problem = TOPIC_PROBLEMS[topic] ?? "Реши задачу по этой теме"
+  const normalizedTopic = (topic ?? "").trim()
+  const problem = TOPIC_PROBLEMS[normalizedTopic] ?? (normalizedTopic ? `Реши любую задачу по теме: ${normalizedTopic}` : "Реши любую задачу по этой теме")
+  console.log('[PRACTICE] topic:', normalizedTopic, 'problem:', TOPIC_PROBLEMS[normalizedTopic])
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 16)
@@ -1143,24 +1260,54 @@ function PracticeSheet({ topic, onUpload, onClose }) {
           <XIcon />
         </button>
 
-        {/* Eyebrow */}
+        {/* Header */}
         <div style={{
-          fontSize: "var(--text-xs)", fontWeight: 700,
-          letterSpacing: "0.08em", textTransform: "uppercase",
-          color: "var(--color-text-muted)", marginBottom: 8,
+          fontSize: "var(--text-lg)", fontWeight: 700,
+          color: "var(--color-text-primary)",
+          marginBottom: 4,
+          paddingRight: 40,
         }}>
-          {topic} · Похожая задача
+          Попробуй похожую задачу
+        </div>
+        <div style={{
+          fontSize: "var(--text-xs)", fontWeight: 600,
+          letterSpacing: "0.07em", textTransform: "uppercase",
+          color: "var(--color-text-muted)", marginBottom: 16,
+        }}>
+          {topic}
         </div>
 
-        {/* Problem text */}
-        <p style={{
-          fontFamily: "var(--font-body)", fontStyle: "italic",
-          fontSize: "var(--text-md)", fontWeight: 500,
-          color: "var(--color-text-primary)",
-          lineHeight: "var(--leading-normal)",
-          margin: "0 0 20px",
+        {/* Problem card */}
+        <div style={{
+          background: "var(--color-card)",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius-lg)",
+          padding: "16px 18px",
+          marginBottom: 20,
         }}>
-          {problem}
+          <p style={{
+            fontFamily: "var(--font-body)",
+            fontSize: "var(--text-lg)", fontWeight: 500,
+            color: "var(--color-text-primary)",
+            lineHeight: "var(--leading-loose)",
+            margin: 0,
+          }}>
+            {problem}
+          </p>
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: "var(--color-border)", marginBottom: 20 }} />
+
+        {/* Instruction */}
+        <p style={{
+          fontFamily: "var(--font-body)",
+          fontSize: "var(--text-sm)", fontWeight: 500,
+          color: "var(--color-text-secondary)",
+          margin: "0 0 14px",
+          lineHeight: "var(--leading-normal)",
+        }}>
+          Реши на бумаге, затем сфотографируй решение
         </p>
 
         {/* Hidden inputs — onChange handled via native listeners in useEffect */}
@@ -1176,7 +1323,7 @@ function PracticeSheet({ topic, onUpload, onClose }) {
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
           style={{
-            width: "100%", minHeight: 200,
+            width: "100%", minHeight: 160,
             borderRadius: "var(--radius-2xl)",
             background: "#0C0A09",
             position: "relative", overflow: "hidden",
@@ -1191,11 +1338,8 @@ function PracticeSheet({ topic, onUpload, onClose }) {
           ))}
           <div className="viewfinder__scan" />
           <div style={{ textAlign: "center", position: "relative", zIndex: 1, padding: "0 24px" }}>
-            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", margin: "0 0 4px", lineHeight: "var(--leading-normal)" }}>
-              Реши задачу и сфотографируй
-            </p>
-            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)", color: "var(--color-text-muted)", margin: 0, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-              или перетащи файл
+            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", margin: 0, letterSpacing: "0.04em" }}>
+              Нажми, чтобы сфотографировать
             </p>
           </div>
           <button
@@ -1277,8 +1421,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
     }
   }
 
-  const isLoading = state === "loading" || state === "ocr_done"
-  const loadingLabel = state === "loading" ? "Распознаю решение..." : "Макс думает..."
+  const isLoading = state === "loading"
   const isCorrect = maxResponse?.is_correct === true
   const isWrong   = maxResponse?.is_correct === false
 
@@ -1434,15 +1577,25 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
         flexDirection: "column",
         gap: 12,
       }}>
-        {/* Loading */}
+        {/* OCR running */}
         {isLoading && (
           <div style={{
             flex: 1, display: "flex",
             alignItems: "center", justifyContent: "center",
             minHeight: 240,
           }}>
-            <DotLoader label={loadingLabel} />
+            <DotLoader label="Распознаю решение..." />
           </div>
+        )}
+
+        {/* OCR done, Claude running — skeleton */}
+        {state === "ocr_done" && (
+          <>
+            <div style={{ animation: "fadeUp 0.25s ease both", paddingBottom: 4 }}>
+              <DotLoader label="Макс разбирает решение..." />
+            </div>
+            {[0, 1, 2].map(i => <SkeletonStepCard key={i} index={i} />)}
+          </>
         )}
 
         {/* OCR uncertain */}
@@ -1545,7 +1698,9 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {/* Revealed steps so far */}
                 {localSteps.slice(0, stepIndex + 1).map((step, i) => (
-                  <StepCard key={step.step_number} step={step} index={i} />
+                  <StepCardErrorBoundary key={step.step_number}>
+                    <StepCard step={step} index={i} />
+                  </StepCardErrorBoundary>
                 ))}
 
                 {/* Nudge question — shown during step flow once an error is revealed */}
@@ -2075,36 +2230,60 @@ export default function App() {
   }
 
   const handleUpload = useCallback(async (file) => {
-    const localUrl = URL.createObjectURL(file)
-    setThumbnail(localUrl)
+    // Transition to analysis screen FIRST — nothing before these lines should fail silently.
+    // URL.createObjectURL is attempted after, so a failure there doesn't strand the user on home.
     setExplanationState("loading")
     setOcrLatex(null)
     setMaxResponse(null)
 
+    let localUrl = null
+    try {
+      localUrl = URL.createObjectURL(file)
+      setThumbnail(localUrl)
+    } catch (e) {
+      console.error("createObjectURL failed:", e)
+    }
+
     let sessionRow = null
 
     try {
-      // Resize to max 800px / quality 0.85 — 3× smaller than 1200px/0.92,
-      // sufficient for Mathpix handwritten OCR
-      const { blob, imageBase64 } = await new Promise((resolve, reject) => {
+      // Read the raw file as base64 for OCR — more reliable than canvas on iOS
+      // (canvas can produce blank output for HEIC/large camera photos on iOS Safari)
+      const imageBase64 = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onerror = reject
         reader.onload = () => {
+          const b64 = reader.result?.split(',')[1]
+          if (b64) resolve(b64)
+          else reject(new Error("FileReader produced empty result"))
+        }
+        reader.readAsDataURL(file)
+      })
+
+      // Separately create a resized blob for Supabase storage (best-effort; falls back to original)
+      const blob = await new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.onerror = () => resolve(file)
+        reader.onload = () => {
           const img = new Image()
-          img.onerror = reject
+          img.onerror = () => resolve(file)
           img.onload = () => {
-            const MAX = 800
-            const scale = img.width > MAX ? MAX / img.width : 1
-            const canvas = document.createElement("canvas")
-            canvas.width  = Math.round(img.width  * scale)
-            canvas.height = Math.round(img.height * scale)
-            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height)
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
-            const imageBase64 = dataUrl.split(',')[1]
-            canvas.toBlob(blob => {
-              if (!blob) reject(new Error("Canvas toBlob failed"))
-              else resolve({ blob, imageBase64 })
-            }, "image/jpeg", 0.85)
+            try {
+              const MAX = 800
+              const w = img.naturalWidth || img.width
+              const h = img.naturalHeight || img.height
+              if (!w || !h) { resolve(file); return }
+              const scale = w > MAX ? MAX / w : 1
+              const canvas = document.createElement("canvas")
+              canvas.width  = Math.round(w * scale)
+              canvas.height = Math.round(h * scale)
+              const ctx = canvas.getContext("2d")
+              if (!ctx) { resolve(file); return }
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+              canvas.toBlob(b => resolve(b || file), "image/jpeg", 0.85)
+            } catch {
+              resolve(file)
+            }
           }
           img.src = reader.result
         }

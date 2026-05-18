@@ -140,6 +140,11 @@ body::before {
 ::-webkit-scrollbar { display: none; }
 * { scrollbar-width: none; }
 
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.45; }
+  50%       { opacity: 0.85; }
+}
+
 @keyframes mathFloat {
   0%, 100% { transform: rotate(var(--char-rot, 0deg)) translateY(0px); }
   50%       { transform: rotate(var(--char-rot, 0deg)) translateY(-14px); }

@@ -1,6 +1,6 @@
-# DESIGN SYSTEM — СТО БАЛЛОВ
+# DESIGN SYSTEM — РЕШАЕМ
 ## Документ для Claude Code
-### Версия 1.0 | Апрель 2026
+### Версия 2.0 | Май 2026
 
 ---
 
@@ -12,11 +12,11 @@
 
 **Платформа:** Web app (mobile-first) + Telegram mini-app.
 
-**Дизайн-направление:** «Умный дневник в темноте» — тепло рукописной тетради, точность хирурга, без детских игрушек. Не Duolingo, не Khan Academy. Ближе к Notion Dark + аналоговая текстура.
+**Дизайн-направление:** «Midnight Lab» — тёмная база с электрическим акцентом. Умный, острый, современный. Не Duolingo, не Khan Academy. Ближе к Raycast + Linear, но с теплом рукописной математики.
 
 **Три принципа:**
 1. **Точность важнее красоты** — каждый элемент несёт информацию
-2. **Тепло, не холод** — янтарные тона вместо синих, округлые радиусы
+2. **Контраст как инструмент** — cyan mint на тёмном фоне = фокус и энергия
 3. **Прогресс как факт** — числа крупно, динамика видна без усилий
 
 ---
@@ -26,40 +26,41 @@
 ```css
 :root {
   /* === ФОНЫ === */
-  --color-bg:           #1C1714;   /* основной фон */
-  --color-surface:      #2A2320;   /* карточки, панели */
-  --color-surface-2:    #332C29;   /* вложенные элементы, hover */
-  --color-surface-3:    #3D3530;   /* активные состояния */
+  --color-bg:           #0D0F1C;   /* основной фон */
+  --color-surface:      #1A1D2E;   /* карточки, панели */
+  --color-surface-2:    #2E3150;   /* вложенные элементы, hover */
+  --color-surface-3:    #3E4170;   /* активные состояния */
 
-  /* === АКЦЕНТЫ === */
-  --color-jasmine:      #FADF7F;   /* PRIMARY CTA, highlights */
-  --color-jasmine-dim:  rgba(250, 223, 127, 0.12); /* фон jasmine-элементов */
-  --color-vanilla:      #F2E29F;   /* основной текст */
-  --color-fawn:         #D9B26F;   /* вторичный акцент, иконки */
-  --color-sand:         #A69658;   /* третичный текст, метки */
-  --color-rose:         #795C5F;   /* эмоциональный акцент */
-  --color-rose-light:   #9E7C7F;   /* rose на тёмном фоне */
+  /* === ОСНОВНОЙ АКЦЕНТ — CYAN MINT (верно, прогресс, CTA) === */
+  --color-accent:       #5EECD8;
+  --color-accent-tint:  #1A3A36;
+  --color-accent-dim:   rgba(94, 236, 216, 0.12);
 
-  /* === СЕМАНТИКА === */
-  --color-error:        #C97B6A;   /* ошибка */
-  --color-error-bg:     rgba(201, 123, 106, 0.10);
-  --color-error-border: rgba(201, 123, 106, 0.25);
-  --color-correct:      #7EC896;   /* верно */
-  --color-correct-bg:   rgba(126, 200, 150, 0.10);
-  --color-correct-border: rgba(126, 200, 150, 0.22);
-  --color-warning:      #D9B26F;   /* внимание */
-  --color-warning-bg:   rgba(217, 178, 111, 0.10);
+  /* === ОШИБКА — CORAL ROSE === */
+  --color-error:        #FF6B6B;
+  --color-error-tint:   #2A1A1A;
+  --color-error-bg:     rgba(255, 107, 107, 0.10);
+  --color-error-border: rgba(255, 107, 107, 0.25);
+
+  /* === ВЕРНО === */
+  --color-correct:        #5EECD8;
+  --color-correct-bg:     rgba(94, 236, 216, 0.10);
+  --color-correct-border: rgba(94, 236, 216, 0.22);
+
+  /* === ПРЕДУПРЕЖДЕНИЕ === */
+  --color-warning:      #F5B942;
+  --color-warning-bg:   rgba(245, 185, 66, 0.10);
 
   /* === ТЕКСТ === */
-  --color-text-primary:   #F2E29F;              /* --color-vanilla */
-  --color-text-secondary: rgba(242,226,159,0.6);
-  --color-text-dim:       rgba(242,226,159,0.4);
-  --color-text-ghost:     rgba(242,226,159,0.2);
+  --color-text-primary:   #F0EEE6;
+  --color-text-secondary: rgba(240, 238, 230, 0.6);
+  --color-text-dim:       rgba(240, 238, 230, 0.4);
+  --color-text-ghost:     rgba(240, 238, 230, 0.2);
 
   /* === ГРАНИЦЫ === */
-  --color-border:         rgba(217,178,111,0.15);
-  --color-border-strong:  rgba(217,178,111,0.28);
-  --color-border-subtle:  rgba(217,178,111,0.08);
+  --color-border:         rgba(94, 236, 216, 0.12);
+  --color-border-strong:  rgba(94, 236, 216, 0.25);
+  --color-border-subtle:  rgba(94, 236, 216, 0.06);
 }
 ```
 
@@ -67,14 +68,15 @@
 
 | Ситуация | Цвет |
 |---|---|
-| Основная кнопка / CTA | `--color-jasmine` (текст `--color-bg`) |
+| Основная кнопка / CTA | `--color-accent` (текст `--color-bg`) |
 | Верное решение / успех | `--color-correct` |
 | Ошибка / неверно | `--color-error` |
 | Слабое место (топик) | `--color-error` полоса сверху карточки |
 | Сильное место (топик) | `--color-correct` полоса сверху карточки |
-| Прогноз / прогресс | `--color-jasmine` |
-| Цель / целевой балл | `--color-rose-light` |
-| Метки, eyebrow-текст | `--color-sand` или `--color-rose-light` |
+| Прогноз / прогресс | `--color-accent` |
+| Цель / целевой балл | `--color-accent` |
+| Метки, eyebrow-текст | `--color-text-secondary` или `--color-text-dim` |
+| Предупреждение | `--color-warning` |
 
 ---
 
@@ -148,7 +150,7 @@
   font-size: var(--text-4xl);
   font-weight: 700;
   letter-spacing: var(--tracking-tight);
-  color: var(--color-jasmine);
+  color: var(--color-accent);
   line-height: 1;
 }
 
@@ -231,7 +233,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  background: var(--color-jasmine);
+  background: var(--color-accent);
   color: var(--color-bg);
   border: none;
   border-radius: var(--radius-lg);
@@ -242,10 +244,10 @@
   letter-spacing: -0.01em;
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
-  box-shadow: 0 4px 24px rgba(250,223,127,0.2);
+  box-shadow: 0 4px 24px rgba(94, 236, 216, 0.2);
   width: 100%; /* full-width по умолчанию на mobile */
 }
-.btn-primary:hover  { transform: translateY(-1px); box-shadow: 0 8px 32px rgba(250,223,127,0.3); }
+.btn-primary:hover  { transform: translateY(-1px); box-shadow: 0 8px 32px rgba(94, 236, 216, 0.3); }
 .btn-primary:active { transform: translateY(1px); box-shadow: none; }
 .btn-primary:disabled { opacity: 0.4; pointer-events: none; }
 
@@ -256,7 +258,7 @@
   justify-content: center;
   gap: var(--space-2);
   background: var(--color-surface);
-  color: var(--color-fawn);
+  color: var(--color-accent);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 14px var(--space-5);
@@ -302,9 +304,9 @@
 }
 
 /* Цветная полоса слева (статус) */
-.card--error  { border-color: var(--color-error-border);   background: var(--color-error-bg); }
+.card--error   { border-color: var(--color-error-border);   background: var(--color-error-bg); }
 .card--correct { border-color: var(--color-correct-border); }
-.card--highlight { border-color: rgba(250,223,127,0.22); }
+.card--highlight { border-color: rgba(94, 236, 216, 0.22); }
 
 .card--error::before,
 .card--correct::before,
@@ -315,9 +317,9 @@
   width: 3px;
   border-radius: 3px 0 0 3px;
 }
-.card--error::before    { background: var(--color-error); }
-.card--correct::before  { background: var(--color-correct); opacity: 0.7; }
-.card--highlight::before { background: var(--color-jasmine); opacity: 0.8; }
+.card--error::before     { background: var(--color-error); }
+.card--correct::before   { background: var(--color-correct); opacity: 0.7; }
+.card--highlight::before { background: var(--color-accent); opacity: 0.8; }
 
 /* Полоса сверху (для topic pills) */
 .card--weak-top::after   { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--color-error); border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
@@ -347,13 +349,13 @@ export function ScoreRing({ value, goal = 100, size = 56 }) {
         <circle
           cx={size/2} cy={size/2} r={r}
           fill="none"
-          stroke="var(--color-jasmine)"
+          stroke="var(--color-accent)"
           strokeWidth="3.5"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           style={{
-            filter: 'drop-shadow(0 0 5px rgba(250,223,127,0.35))',
+            filter: 'drop-shadow(0 0 5px rgba(94,236,216,0.35))',
             transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1)'
           }}
         />
@@ -364,7 +366,7 @@ export function ScoreRing({ value, goal = 100, size = 56 }) {
         fontFamily: 'var(--font-display)',
         fontSize: size * 0.27,
         fontWeight: 700,
-        color: 'var(--color-jasmine)'
+        color: 'var(--color-accent)'
       }}>
         {value}
       </div>
@@ -382,9 +384,9 @@ export function ScoreRing({ value, goal = 100, size = 56 }) {
 // status: 'weak' | 'strong' | 'neutral'
 export function TopicPill({ name, stat, statType = 'neutral', status = 'neutral', onClick }) {
   const statColor = {
-    error: 'var(--color-error)',
+    error:   'var(--color-error)',
     correct: 'var(--color-correct)',
-    neutral: 'var(--color-fawn)',
+    neutral: 'var(--color-accent)',
   }[statType];
 
   return (
@@ -424,7 +426,7 @@ export function StepCard({ stepNumber, equation, comment, status = 'neutral' }) 
   const markerColors = {
     correct: { bg: 'var(--color-correct-bg)', color: 'var(--color-correct)' },
     error:   { bg: 'var(--color-error-bg)',   color: 'var(--color-error)' },
-    neutral: { bg: 'var(--color-warning-bg)', color: 'var(--color-fawn)' },
+    neutral: { bg: 'var(--color-warning-bg)', color: 'var(--color-warning)' },
   }[status];
 
   return (
@@ -495,7 +497,7 @@ export function BottomSheet({ isOpen, onClose, children, title, subtitle }) {
         onClick={onClose}
         style={{
           position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.55)',
+          background: 'rgba(0,0,0,0.65)',
           backdropFilter: 'blur(6px)',
           zIndex: 50,
           opacity: isOpen ? 1 : 0,
@@ -521,7 +523,7 @@ export function BottomSheet({ isOpen, onClose, children, title, subtitle }) {
         {/* Handle */}
         <div style={{
           width: 34, height: 4,
-          background: 'rgba(217,178,111,0.2)',
+          background: 'rgba(94,236,216,0.2)',
           borderRadius: 4,
           margin: '0 auto 22px',
         }} />
@@ -576,7 +578,7 @@ export function BottomSheet({ isOpen, onClose, children, title, subtitle }) {
   width: 100%;
   height: 296px;
   border-radius: var(--radius-2xl);
-  background: #0C0A09;
+  background: #080A14;
   position: relative;
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -587,7 +589,7 @@ export function BottomSheet({ isOpen, onClose, children, title, subtitle }) {
 .viewfinder__bracket {
   position: absolute;
   width: 24px; height: 24px;
-  border-color: var(--color-jasmine);
+  border-color: var(--color-accent);
   border-style: solid;
   opacity: 0.75;
 }
@@ -600,9 +602,9 @@ export function BottomSheet({ isOpen, onClose, children, title, subtitle }) {
 .viewfinder__scan {
   position: absolute; left: 0; right: 0;
   height: 1.5px;
-  background: linear-gradient(90deg, transparent 5%, var(--color-jasmine) 40%, var(--color-jasmine) 60%, transparent 95%);
+  background: linear-gradient(90deg, transparent 5%, var(--color-accent) 40%, var(--color-accent) 60%, transparent 95%);
   animation: scanLine 3.5s ease-in-out infinite;
-  box-shadow: 0 0 14px rgba(250,223,127,0.5);
+  box-shadow: 0 0 14px rgba(94,236,216,0.5);
 }
 @keyframes scanLine {
   0%   { top: 15%; opacity: 0; }
@@ -616,7 +618,7 @@ export function BottomSheet({ isOpen, onClose, children, title, subtitle }) {
   position: absolute;
   bottom: 0; left: 0; right: 0;
   padding: 14px 18px 18px;
-  background: linear-gradient(to top, rgba(12,10,9,0.96) 0%, transparent 100%);
+  background: linear-gradient(to top, rgba(13,15,28,0.96) 0%, transparent 100%);
   display: flex;
   gap: 10px;
 }
@@ -669,7 +671,7 @@ export function BottomNav({ active, onChange }) {
           <span style={{
             fontSize: 10, fontWeight: 600,
             letterSpacing: '0.03em',
-            color: active === item.key ? 'var(--color-jasmine)' : 'var(--color-text-dim)',
+            color: active === item.key ? 'var(--color-accent)' : 'var(--color-text-dim)',
           }}>
             {item.label}
           </span>
@@ -714,7 +716,7 @@ export function BottomNav({ active, onChange }) {
   50%     { transform: scale(1.04); }
 }
 
-/* Flamе (streak) */
+/* Flame (streak) */
 @keyframes flicker {
   0%,100% { transform: scale(1) rotate(-3deg); }
   50%     { transform: scale(1.12) rotate(2deg); }
@@ -759,9 +761,9 @@ export function BottomNav({ active, onChange }) {
 /* Фон камеры */
 .camera-ambient {
   background:
-    radial-gradient(ellipse at 25% 35%, rgba(121,92,95,0.12) 0%, transparent 55%),
-    radial-gradient(ellipse at 75% 65%, rgba(166,150,88,0.08) 0%, transparent 50%),
-    #0C0A09;
+    radial-gradient(ellipse at 25% 35%, rgba(94,236,216,0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 75% 65%, rgba(94,236,216,0.04) 0%, transparent 50%),
+    #0D0F1C;
 }
 
 /* Линованный фон (как тетрадь) */
@@ -770,8 +772,8 @@ export function BottomNav({ active, onChange }) {
     to bottom,
     transparent,
     transparent 30px,
-    rgba(217,178,111,0.04) 30px,
-    rgba(217,178,111,0.04) 31px
+    rgba(94,236,216,0.03) 30px,
+    rgba(94,236,216,0.03) 31px
   );
 }
 
@@ -833,10 +835,9 @@ export function BottomNav({ active, onChange }) {
 ### Статус ошибки в тексте
 
 ```jsx
-// Использование в JSX
 // Зачёркнутое неверное → правильное рядом
 <span>
-  D = <span style={{ color: 'var(--color-error)', textDecoration: 'line-through', textDecorationColor: 'rgba(201,123,106,0.5)' }}>
+  D = <span style={{ color: 'var(--color-error)', textDecoration: 'line-through', textDecorationColor: 'rgba(255,107,107,0.5)' }}>
     25 − 24 = 2
   </span>
   <span style={{ color: 'var(--color-correct)', marginLeft: 6 }}>= 1</span>
@@ -847,7 +848,7 @@ export function BottomNav({ active, onChange }) {
 
 ```jsx
 <div>
-  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-rose-light)', marginBottom: 6 }}>
+  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-error)', marginBottom: 6 }}>
     Найдена ошибка · Шаг 2
   </div>
   <div style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-xl)', fontWeight: 700, letterSpacing: 'var(--tracking-tight)' }}>
@@ -889,16 +890,16 @@ export function BottomNav({ active, onChange }) {
 7. **Grain overlay** на каждом корневом экране через `body::before`.
 8. **Никаких белых/светлых фонов** — все поверхности тёмные.
 9. **Border-radius** строго из переменных.
-10. **Кнопки** — primary (jasmine), secondary (surface), ghost (transparent).
+10. **Кнопки** — primary (accent/cyan), secondary (surface + accent border), ghost (transparent).
 
 ### Запрещено
 
 - `background: white` / `background: #fff`
 - `font-family: Inter` / `Roboto` / системные шрифты
 - `color: #333` / хардкодные серые
-- Синие акценты
+- Янтарные / тёплые жёлтые акценты (`#FADF7F`, `#D9B26F` и подобные) — это старая палитра
 - `border-radius: 5px` (слишком мало для этого стиля)
-- Тени без warm-tint: `box-shadow: 0 4px 8px rgba(0,0,0,0.2)` — вместо них `rgba(250,223,127,0.2)` для jasmine-элементов
+- Тени без cyan-tint: `box-shadow: 0 4px 8px rgba(0,0,0,0.2)` — вместо них `rgba(94,236,216,0.2)` для accent-элементов
 
 ---
 
@@ -926,5 +927,6 @@ export function BottomNav({ active, onChange }) {
 
 ---
 
-*Design System v1.0 — Foundation Lab / Сто Баллов*
+*Design System v2.0 — Foundation Lab / Решаем*
+*Палитра: Midnight #0D0F1C + Cyan Mint #5EECD8 + Coral Rose #FF6B6B*
 *Обновлять при добавлении новых компонентов*

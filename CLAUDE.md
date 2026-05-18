@@ -172,3 +172,5 @@ OPENAI_API_KEY=
 - Менять модель Claude — только claude-sonnet-4-6
 - Автовоспроизведение звука — только по кнопке
 - Отправлять секретные ключи API во фронтенд
+- Не менять порядок полей Mathpix: всегда latex_styled || text — не наоборот
+- OCR edge function is stable — do not refactor without explicit instruction
