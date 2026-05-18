@@ -324,7 +324,10 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
 // ─── KaTeX Math Renderer ──────────────────────────────────────────────────────
 
 function hasMath(text) {
-  return text && /[\\^]|sqrt|frac|=/.test(text)
+  // Only attempt KaTeX for actual LaTeX commands (backslash + letter).
+  // Plain algebraic text like "x = 5" or "2x^2 + 1" must render as plain text
+  // because KaTeX math mode silently strips all spaces, causing words to run together.
+  return text && /\\[a-zA-Z]/.test(text)
 }
 
 function MathField({ text }) {
@@ -386,6 +389,8 @@ function StepCard({ step, index }) {
           fontSize: "var(--text-md)",
           lineHeight: "var(--leading-tight)",
           marginBottom: (isError && step.correction) ? 4 : 0,
+          wordBreak: "break-word",
+          overflowWrap: "break-word",
         }}>
           <span style={{
             color: isError ? "var(--color-error)" : "var(--color-text-primary)",
