@@ -89,6 +89,7 @@ See: `supabase/functions/explain/index.ts`
 - Для ТИП Б и ТИП В: steps = []
 - correction поле содержит только указание на ошибку в конкретном шаге — не полный правильный ответ
 - correction максимум одна строка, показывает где именно ошибка, не решение целиком
+- never ask clarifying questions, always analyze what's in the image
 ```
 
 ---
