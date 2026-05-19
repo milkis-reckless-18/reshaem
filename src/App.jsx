@@ -183,9 +183,14 @@ function PlayButton({ text }) {
       })
       .then(() => setStatus("playing"))
       .catch(err => {
-        console.error("TTS failed:", err)
+        console.error("TTS failed, falling back to Web Speech:", err)
         if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null }
-        setStatus("idle")
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.lang = 'ru-RU'
+        utterance.onend = () => setStatus("idle")
+        utterance.onerror = () => setStatus("idle")
+        window.speechSynthesis.speak(utterance)
+        setStatus("playing")
       })
   }
 
@@ -255,9 +260,14 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
       })
       .then(() => setStatus("playing"))
       .catch(err => {
-        console.error("TTS failed:", err)
+        console.error("TTS failed, falling back to Web Speech:", err)
         if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null }
-        setStatus("idle")
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.lang = 'ru-RU'
+        utterance.onend = () => setStatus("idle")
+        utterance.onerror = () => setStatus("idle")
+        window.speechSynthesis.speak(utterance)
+        setStatus("playing")
       })
   }
 
@@ -1091,18 +1101,18 @@ function SessionSheet({ session, onClose }) {
 // ─── Topic Problems ───────────────────────────────────────────────────────────
 
 const TOPIC_PROBLEMS = {
-  "Уравнения":        "Решите уравнение: 2x² - 5x + 3 = 0",
-  "Алгебра":          "Упростите: (a+b)² - (a-b)²",
-  "Геометрия":        "Катеты прямоугольного треугольника равны 3 и 4. Найдите гипотенузу.",
-  "Тригонометрия":    "Решите: sin(x) = √2/2 на отрезке [0; 2π]",
-  "Производная":      "Найдите производную: f(x) = x³ - 3x² + 2x",
-  "Интеграл":         "Вычислите: ∫(2x + 1)dx",
-  "Вероятность":      "В урне 3 белых и 5 чёрных шаров. Найдите вероятность извлечь белый.",
-  "Неравенства":      "Решите: x² - 4x - 5 > 0",
-  "Функции":          "Найдите область определения: f(x) = √(4 - x²)",
-  "Числа":            "Найдите НОД чисел 48 и 36",
-  "Статистика":       "Найдите среднее: 4, 7, 2, 9, 3",
-  "Текстовая задача": "Поезд прошёл 240 км за 3 часа. Найдите среднюю скорость.",
+  "уравнения":        "Решите уравнение: 2x² - 5x + 3 = 0",
+  "алгебра":          "Упростите: (a+b)² - (a-b)²",
+  "геометрия":        "Катеты прямоугольного треугольника равны 3 и 4. Найдите гипотенузу.",
+  "тригонометрия":    "Решите: sin(x) = √2/2 на отрезке [0; 2π]",
+  "производная":      "Найдите производную: f(x) = x³ - 3x² + 2x",
+  "интеграл":         "Вычислите: ∫(2x + 1)dx",
+  "вероятность":      "В урне 3 белых и 5 чёрных шаров. Найдите вероятность извлечь белый.",
+  "неравенства":      "Решите: x² - 4x - 5 > 0",
+  "функции":          "Найдите область определения: f(x) = √(4 - x²)",
+  "числа":            "Найдите НОД чисел 48 и 36",
+  "статистика":       "Найдите среднее: 4, 7, 2, 9, 3",
+  "текстовая задача": "Поезд прошёл 240 км за 3 часа. Найдите среднюю скорость.",
 }
 
 // ─── Practice Sheet ───────────────────────────────────────────────────────────
@@ -1117,7 +1127,7 @@ function PracticeSheet({ topic, onUpload, onClose }) {
   useEffect(() => { onUploadRef.current = onUpload }, [onUpload])
   useEffect(() => { onCloseRef.current  = onClose  }, [onClose])
 
-  const normalizedTopic = (topic ?? "").trim()
+  const normalizedTopic = (topic ?? "").trim().toLowerCase()
   const problem = TOPIC_PROBLEMS[normalizedTopic] ?? (normalizedTopic ? `Реши любую задачу по теме: ${normalizedTopic}` : "Реши любую задачу по этой теме")
   console.log('[PRACTICE] topic:', normalizedTopic, 'problem:', TOPIC_PROBLEMS[normalizedTopic])
 
