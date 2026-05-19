@@ -1,10 +1,7 @@
-﻿import { useState, useRef, useCallback, useEffect, Component } from "react"
-import katex from "katex"
+﻿import { useState, useRef, useCallback, useEffect } from "react"
+import { renderToString } from "katex"
 import { supabase } from "./lib/supabase"
 import reshaemLogo from "./assets/reshaem-logo.svg"
-
-const SUPABASE_URL     = import.meta.env.VITE_SUPABASE_URL ?? ""
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ""
 
 // Preprocess math notation into speakable Russian before sending to TTS.
 function preprocessForTTS(text) {
@@ -58,7 +55,15 @@ function preprocessForTTS(text) {
 // Shared AudioContext — created once, reused across all TTS buttons.
 // Calling ctx.resume() synchronously inside a user-gesture handler captures
 // the browser's autoplay permission so source.start() works after async gaps.
-const speakUrl = () => `${SUPABASE_URL}/functions/v1/speak`
+const getAudioCtx = (() => {
+  let ctx = null
+  return () => {
+    if (!ctx || ctx.state === "closed") {
+      ctx = new (window.AudioContext || window.webkitAudioContext)()
+    }
+    return ctx
+  }
+})()
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -151,47 +156,62 @@ function DotLoader({ label }) {
 
 function PlayButton({ text }) {
   const [status, setStatus] = useState("idle")
-  const audioRef = useRef(null)
-  const urlRef   = useRef(null)
+  const sourceRef = useRef(null)  // { node: AudioBufferSourceNode, cancel: fn }
+  const bufferRef = useRef(null)  // decoded AudioBuffer
+  const offsetRef = useRef(0)     // pause position in seconds
+  const startRef  = useRef(0)     // ctx.currentTime when playback last began
 
   useEffect(() => () => {
-    audioRef.current?.pause()
-    if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+    sourceRef.current?.cancel()
+    try { sourceRef.current?.node.stop() } catch (_) {}
   }, [])
 
-  const handleClick = () => {
-    if (status === "playing") { audioRef.current?.pause(); setStatus("paused"); return }
-    if (status === "paused")  { audioRef.current?.play().catch(() => {}); setStatus("playing"); return }
-    if (status === "loading") return
+  const startNode = (buffer, offset) => {
+    const ctx = getAudioCtx()
+    let cancelled = false
+    const node = ctx.createBufferSource()
+    node.buffer = buffer
+    node.connect(ctx.destination)
+    node.onended = () => {
+      if (!cancelled) { setStatus("idle"); offsetRef.current = 0 }
+    }
+    sourceRef.current = { node, cancel: () => { cancelled = true } }
+    startRef.current = ctx.currentTime
+    node.start(0, offset)
+    setStatus("playing")
+  }
 
+  const handleClick = () => {
+    const ctx = getAudioCtx()
+
+    if (status === "playing") {
+      const elapsed = ctx.currentTime - startRef.current
+      offsetRef.current = Math.min(offsetRef.current + elapsed, bufferRef.current?.duration ?? 0)
+      sourceRef.current?.cancel()
+      try { sourceRef.current?.node.stop() } catch (_) {}
+      setStatus("paused")
+      return
+    }
+    if (status === "paused") {
+      ctx.resume().then(() => startNode(bufferRef.current, offsetRef.current))
+      return
+    }
+
+    // ── Mobile fix: resume AudioContext synchronously inside the tap handler.
+    // This captures the browser's autoplay permission so node.start() works
+    // after the async fetch without being blocked.
+    ctx.resume()
     setStatus("loading")
 
-    supabase.functions.invoke('speak', {
-      body: { text: preprocessForTTS(text) },
+    fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "tts-1", input: preprocessForTTS(text), voice: "echo" }),
     })
-      .then(({ data, error }) => {
-        if (error) throw new Error("TTS " + error.message)
-        return data
-      })
-      .then(blob => {
-        const url = URL.createObjectURL(blob)
-        urlRef.current = url
-        const audio = new Audio(url)
-        audioRef.current = audio
-        audio.onended = () => { URL.revokeObjectURL(url); urlRef.current = null; setStatus("idle") }
-        return audio.play()
-      })
-      .then(() => setStatus("playing"))
-      .catch(err => {
-        console.error("TTS failed, falling back to Web Speech:", err)
-        if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null }
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.lang = 'ru-RU'
-        utterance.onend = () => setStatus("idle")
-        utterance.onerror = () => setStatus("idle")
-        window.speechSynthesis.speak(utterance)
-        setStatus("playing")
-      })
+      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
+      .then(buf => ctx.decodeAudioData(buf))
+      .then(decoded => { bufferRef.current = decoded; offsetRef.current = 0; startNode(decoded, 0) })
+      .catch(err => { console.error("TTS failed:", err); setStatus("idle") })
   }
 
   return (
@@ -228,47 +248,59 @@ function PlayButton({ text }) {
 
 function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveColor = "rgba(94,236,216,0.38)" }) {
   const [status, setStatus] = useState("idle")
-  const audioRef = useRef(null)
-  const urlRef   = useRef(null)
+  const sourceRef = useRef(null)
+  const bufferRef = useRef(null)
+  const offsetRef = useRef(0)
+  const startRef  = useRef(0)
 
   useEffect(() => () => {
-    audioRef.current?.pause()
-    if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+    sourceRef.current?.cancel()
+    try { sourceRef.current?.node.stop() } catch (_) {}
   }, [])
 
-  const handleClick = () => {
-    if (status === "playing") { audioRef.current?.pause(); setStatus("paused"); return }
-    if (status === "paused")  { audioRef.current?.play().catch(() => {}); setStatus("playing"); return }
-    if (status === "loading") return
+  const startNode = (buffer, offset) => {
+    const ctx = getAudioCtx()
+    let cancelled = false
+    const node = ctx.createBufferSource()
+    node.buffer = buffer
+    node.connect(ctx.destination)
+    node.onended = () => {
+      if (!cancelled) { setStatus("idle"); offsetRef.current = 0 }
+    }
+    sourceRef.current = { node, cancel: () => { cancelled = true } }
+    startRef.current = ctx.currentTime
+    node.start(0, offset)
+    setStatus("playing")
+  }
 
+  const handleClick = () => {
+    const ctx = getAudioCtx()
+
+    if (status === "playing") {
+      const elapsed = ctx.currentTime - startRef.current
+      offsetRef.current = Math.min(offsetRef.current + elapsed, bufferRef.current?.duration ?? 0)
+      sourceRef.current?.cancel()
+      try { sourceRef.current?.node.stop() } catch (_) {}
+      setStatus("paused")
+      return
+    }
+    if (status === "paused") {
+      ctx.resume().then(() => startNode(bufferRef.current, offsetRef.current))
+      return
+    }
+
+    ctx.resume() // synchronous gesture capture — same fix as PlayButton
     setStatus("loading")
 
-    supabase.functions.invoke('speak', {
-      body: { text: preprocessForTTS(text) },
+    fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "tts-1", input: preprocessForTTS(text), voice: "echo" }),
     })
-      .then(({ data, error }) => {
-        if (error) throw new Error("TTS " + error.message)
-        return data
-      })
-      .then(blob => {
-        const url = URL.createObjectURL(blob)
-        urlRef.current = url
-        const audio = new Audio(url)
-        audioRef.current = audio
-        audio.onended = () => { URL.revokeObjectURL(url); urlRef.current = null; setStatus("idle") }
-        return audio.play()
-      })
-      .then(() => setStatus("playing"))
-      .catch(err => {
-        console.error("TTS failed, falling back to Web Speech:", err)
-        if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null }
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.lang = 'ru-RU'
-        utterance.onend = () => setStatus("idle")
-        utterance.onerror = () => setStatus("idle")
-        window.speechSynthesis.speak(utterance)
-        setStatus("playing")
-      })
+      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
+      .then(buf => ctx.decodeAudioData(buf))
+      .then(decoded => { bufferRef.current = decoded; offsetRef.current = 0; startNode(decoded, 0) })
+      .catch(err => { console.error("TTS failed:", err); setStatus("idle") })
   }
 
   return (
@@ -287,139 +319,26 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
   )
 }
 
+// ─── Step Card ────────────────────────────────────────────────────────────────
+
 // ─── KaTeX Math Renderer ──────────────────────────────────────────────────────
 
 function hasMath(text) {
-  if (!text) return false
-  return (
-    /\\[a-zA-Z]/.test(text) ||
-    /[_^]\{/.test(text) ||
-    /\\\(/.test(text) ||
-    /\\\[/.test(text)
-  )
+  // Only attempt KaTeX for actual LaTeX commands (backslash + letter).
+  // Plain algebraic text like "x = 5" or "2x^2 + 1" must render as plain text
+  // because KaTeX math mode silently strips all spaces, causing words to run together.
+  return text && /\\[a-zA-Z]/.test(text)
 }
 
-// Pure-math field: renders via katex.render() into a ref so no dangerouslySetInnerHTML.
-// throwOnError: false means KaTeX renders what it can and shows errors inline rather than throwing.
 function MathField({ text }) {
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!ref.current || !text) return
-    if (!hasMath(text)) {
-      ref.current.textContent = text
-      return
-    }
-    try {
-      katex.render(text, ref.current, { throwOnError: false, errorColor: 'inherit', output: 'html' })
-    } catch (e) {
-      ref.current.textContent = text
-    }
-  }, [text])
   if (!text) return null
-  return <span ref={ref} />
-}
-
-// Mixed-content field: explanation text may contain $inline$ or $$display$$ math.
-// Builds DOM nodes imperatively so plain-text segments are safe text nodes, never innerHTML.
-function InlineText({ text }) {
-  const ref = useRef(null)
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    while (el.firstChild) el.removeChild(el.firstChild)
-    if (!text) return
-    if (!text.includes('$')) {
-      el.textContent = text
-      return
-    }
-    const parts = text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g)
-    parts.forEach(part => {
-      const isDisplay = part.startsWith('$$') && part.endsWith('$$')
-      const isInline  = !isDisplay && part.startsWith('$') && part.endsWith('$')
-      if (isDisplay || isInline) {
-        const latex = part.slice(isDisplay ? 2 : 1, isDisplay ? -2 : -1)
-        const span = document.createElement('span')
-        try {
-          katex.render(latex, span, { throwOnError: false, errorColor: 'inherit', displayMode: isDisplay, output: 'html' })
-        } catch (e) {
-          span.textContent = part
-        }
-        el.appendChild(span)
-      } else {
-        el.appendChild(document.createTextNode(part))
-      }
-    })
-  }, [text])
-  if (!text) return null
-  return <span ref={ref} />
-}
-
-// Error boundary: isolates a single step card so a KaTeX crash can't tear down the whole screen.
-class StepCardErrorBoundary extends Component {
-  constructor(props) {
-    super(props)
-    this.state = { hasError: false }
+  if (!hasMath(text)) return <>{text}</>
+  try {
+    const html = renderToString(text, { displayMode: false, throwOnError: true, output: "html" })
+    return <span dangerouslySetInnerHTML={{ __html: html }} />
+  } catch {
+    return <>{text}</>
   }
-  static getDerivedStateFromError() {
-    return { hasError: true }
-  }
-  render() {
-    if (this.state.hasError) return null
-    return this.props.children
-  }
-}
-
-// ─── Step Card ────────────────────────────────────────────────────────────────
-
-function SkeletonBar({ width, height = 12 }) {
-  return (
-    <div style={{
-      width, height,
-      borderRadius: 6,
-      background: "var(--color-card)",
-      animation: "skeletonPulse 1.6s ease-in-out infinite",
-    }} />
-  )
-}
-
-function SkeletonStepCard({ index }) {
-  return (
-    <div style={{
-      background: "var(--color-surface)",
-      border: "1px solid var(--color-border)",
-      borderRadius: "var(--radius-lg)",
-      padding: "14px 16px",
-      display: "flex",
-      gap: 12,
-      alignItems: "flex-start",
-      animation: `fadeUp 0.3s ${0.05 + index * 0.07}s ease both`,
-    }}>
-      {/* Step number badge placeholder */}
-      <div style={{
-        width: 28, height: 28,
-        borderRadius: 9,
-        background: "var(--color-card)",
-        flexShrink: 0,
-        animation: "skeletonPulse 1.6s ease-in-out infinite",
-      }} />
-
-      {/* Content placeholder bars */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8, paddingTop: 4 }}>
-        <SkeletonBar width="55%" height={13} />
-        <SkeletonBar width="80%" height={11} />
-        <SkeletonBar width="65%" height={11} />
-      </div>
-
-      {/* Play button placeholder */}
-      <div style={{
-        width: 28, height: 28,
-        borderRadius: "50%",
-        background: "var(--color-card)",
-        flexShrink: 0,
-        animation: "skeletonPulse 1.6s ease-in-out infinite",
-      }} />
-    </div>
-  )
 }
 
 function StepCard({ step, index }) {
@@ -497,7 +416,7 @@ function StepCard({ step, index }) {
           </div>
         )}
 
-        {/* explanation — completely separate div, always spaced from above */}
+        {/* explanation — completely separate div, plain text only, always spaced from above */}
         {step.explanation && (
           <div style={{
             marginTop: 8,
@@ -505,7 +424,7 @@ function StepCard({ step, index }) {
             color: "var(--color-text-muted)",
             lineHeight: "var(--leading-normal)",
           }}>
-            <InlineText text={step.explanation} />
+            {step.explanation}
           </div>
         )}
       </div>
@@ -571,46 +490,21 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
   const cameraInputRef  = useRef(null)
   const galleryInputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
-  // Keep a ref to onUpload so the native listener always sees the latest value
-  // even if the component re-renders while the iOS camera is in the foreground.
-  const onUploadRef = useRef(onUpload)
-  useEffect(() => { onUploadRef.current = onUpload }, [onUpload])
 
   const handleFile = useCallback((file) => {
-    if (!file) return
-    // file.type can be empty on some iOS cameras — accept it; the input's accept="image/*" already filters
-    if (file.type && !file.type.startsWith("image/")) return
-    onUploadRef.current(file)
-  }, [])
-
-  // Native listeners — more reliable than React onChange on iOS Safari.
-  // When the camera overlay takes the page to the background, React may
-  // re-render and replace the DOM input node; native listeners survive that.
-  useEffect(() => {
-    const cam = cameraInputRef.current
-    const gal = galleryInputRef.current
-    const onCamChange = (e) => {
-      const file = e.target.files?.[0]
-      if (file) handleFile(file)
-      setTimeout(() => { if (cam) cam.value = "" }, 0)
-    }
-    const onGalChange = (e) => {
-      const file = e.target.files?.[0]
-      if (file) handleFile(file)
-      setTimeout(() => { if (gal) gal.value = "" }, 0)
-    }
-    cam?.addEventListener("change", onCamChange)
-    gal?.addEventListener("change", onGalChange)
-    return () => {
-      cam?.removeEventListener("change", onCamChange)
-      gal?.removeEventListener("change", onGalChange)
-    }
-  }, [handleFile])
+    if (!file || !file.type.startsWith("image/")) return
+    onUpload(file)
+  }, [onUpload])
 
   const handleDrop = (e) => {
     e.preventDefault()
     setDragging(false)
     handleFile(e.dataTransfer.files[0])
+  }
+
+  const handleChange = (e) => {
+    handleFile(e.target.files[0])
+    e.target.value = ""
   }
 
   const brackets = [
@@ -637,11 +531,11 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
         />
       </header>
 
-      {/* Hidden file inputs — onChange handled via native listeners in useEffect */}
+      {/* Hidden file inputs */}
       <input ref={cameraInputRef}  type="file" accept="image/*" capture="environment"
-        style={{ display: "none" }} />
+        onChange={handleChange} style={{ display: "none" }} />
       <input ref={galleryInputRef} type="file" accept="image/*"
-        style={{ display: "none" }} />
+        onChange={handleChange} style={{ display: "none" }} />
 
       <div className="camera-body">
       {/* Viewfinder — pinned, never scrolls away */}
@@ -795,12 +689,9 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
 // ─── Session Detail Sheet ─────────────────────────────────────────────────────
 
 function SessionSheet({ session, onClose }) {
-  const [visible, setVisible]           = useState(false)
-  const [detail, setDetail]             = useState(null)
-  const [loading, setLoading]           = useState(true)
-  const [loadError, setLoadError]       = useState(false)
-  const [loadKey, setLoadKey]           = useState(0)
-  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [visible, setVisible] = useState(false)
+  const [detail, setDetail]   = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 16)
@@ -808,50 +699,29 @@ function SessionSheet({ session, onClose }) {
   }, [])
 
   useEffect(() => {
-    let cancelled = false
     async function load() {
       setLoading(true)
-      setLoadError(false)
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("sessions")
-        .select("id, image_url, ocr_result, explanation, topic, is_correct, nudge_question, created_at")
+        .select("id, image_url, explanation, topic, is_correct, nudge_question, created_at")
         .eq("id", session.id)
         .single()
-      if (cancelled) return
-      if (error || !data) { setLoadError(true) } else { setDetail(data) }
+      if (data) setDetail(data)
       setLoading(false)
     }
     load()
-    return () => { cancelled = true }
-  }, [session.id, loadKey])
+  }, [session.id])
 
   const handleClose = () => {
     setVisible(false)
     setTimeout(onClose, 350)
   }
 
-  // Parse explanation: new sessions store full JSON, old ones store plain text
-  let parsed = null
-  let isOldFormat = false
-  if (detail?.explanation) {
-    try {
-      const obj = JSON.parse(detail.explanation)
-      if (obj && typeof obj === 'object') parsed = obj
-    } catch {
-      isOldFormat = true
-    }
-  }
-
-  const isCorrect = (parsed ? parsed.is_correct : detail?.is_correct) === true
-  const isWrong   = (parsed ? parsed.is_correct : detail?.is_correct) === false
-  const steps     = parsed?.steps ?? []
-  const message   = parsed?.message ?? null
-  const topic     = parsed?.topic ?? detail?.topic ?? null
-  const imageUrl  = detail?.image_url ?? session.image_url ?? null
+  const isCorrect = detail?.is_correct === true
+  const isWrong   = detail?.is_correct === false
 
   return (
     <>
-      {/* Backdrop */}
       <div onClick={handleClose} style={{
         position: "fixed", inset: 0,
         background: "rgba(0,0,0,0.6)",
@@ -860,7 +730,6 @@ function SessionSheet({ session, onClose }) {
         transition: "opacity 0.3s ease",
       }} />
 
-      {/* Sheet */}
       <div style={{
         position: "fixed",
         bottom: 0, left: "50%",
@@ -872,228 +741,92 @@ function SessionSheet({ session, onClose }) {
         padding: "10px var(--screen-px) 48px",
         zIndex: 61,
         transition: "transform 0.42s cubic-bezier(0.32, 0.72, 0, 1)",
-        maxHeight: "90vh",
+        maxHeight: "85vh",
         overflowY: "auto",
       }}>
         {/* Handle */}
-        <div style={{ width: 34, height: 4, background: "rgba(94,236,216,0.2)", borderRadius: 4, margin: "0 auto 20px" }} />
+        <div style={{ width: 34, height: 4, background: "rgba(217,178,111,0.2)", borderRadius: 4, margin: "0 auto 20px" }} />
+
+        {/* Close button */}
+        <button onClick={handleClose} style={{
+          position: "absolute", top: 18, right: 18,
+          width: 32, height: 32,
+          background: "var(--color-card)",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius-md)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "var(--color-text-muted)",
+          cursor: "pointer", padding: 0,
+          transition: "background 0.18s",
+        }}>
+          <XIcon />
+        </button>
 
         {loading ? (
           <div style={{ display: "flex", justifyContent: "center", padding: "32px 0" }}>
             <DotLoader label="Загружаю..." />
           </div>
-
-        ) : loadError || !detail ? (
-          <div style={{ textAlign: "center", padding: "24px 0" }}>
-            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", margin: "0 0 16px" }}>
-              Не удалось загрузить
-            </p>
-            <button onClick={() => setLoadKey(k => k + 1)} style={{
-              background: "var(--color-surface-2)", border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)", padding: "8px 20px",
-              color: "var(--color-accent)", fontFamily: "var(--font-body)",
-              fontSize: "var(--text-sm)", fontWeight: 600, cursor: "pointer",
-            }}>
-              Повторить
-            </button>
-          </div>
-
-        ) : (
+        ) : detail ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-            {/* ── Header: image + topic + is_correct ── */}
+            {/* Thumbnail + topic + verdict */}
             <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 4 }}>
-              {imageUrl && (
-                <div
-                  onClick={() => setLightboxOpen(true)}
-                  style={{
-                    width: 56, height: 56,
-                    borderRadius: "var(--radius-md)",
-                    overflow: "hidden",
-                    border: "1px solid var(--color-border)",
-                    flexShrink: 0, cursor: "pointer",
-                  }}
-                >
-                  <img src={imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              {detail.image_url && (
+                <div style={{ width: 52, height: 52, borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--color-border)", flexShrink: 0 }}>
+                  <img src={detail.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                {topic && (
-                  <div style={{
-                    fontSize: "var(--text-xs)", fontWeight: 700,
-                    letterSpacing: "0.08em", textTransform: "uppercase",
-                    color: "var(--color-text-muted)", marginBottom: 3,
-                  }}>
-                    {topic}
+                {detail.topic && (
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-text-muted)", marginBottom: 3 }}>
+                    {detail.topic}
                   </div>
                 )}
-                <div style={{
-                  fontFamily: "var(--font-display)",
-                  fontSize: "var(--text-lg)", fontWeight: 700,
-                  letterSpacing: "var(--tracking-tight)",
-                  color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-primary)",
-                }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", fontWeight: 700, letterSpacing: "var(--tracking-tight)", color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-primary)" }}>
                   {isCorrect ? "Верное решение" : isWrong ? "Найдена ошибка" : "Анализ"}
                 </div>
               </div>
             </div>
 
-            {/* ── Steps (new format) ── */}
-            {steps.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {steps.map((step, i) => (
-                  <StepCardErrorBoundary key={step.step_number ?? i}>
-                    <StepCard step={step} index={i} />
-                  </StepCardErrorBoundary>
-                ))}
-              </div>
-            )}
-
-            {/* ── Fallback: old plain-text explanation ── */}
-            {isOldFormat && detail.explanation && (
-              <div style={{
-                background: isCorrect ? "var(--color-accent-tint)" : "var(--color-surface-2)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-xl)",
-                padding: "var(--space-5)",
-                position: "relative", overflow: "hidden",
-              }}>
-                <div style={{
-                  position: "absolute", top: 0, left: 0, bottom: 0, width: 3,
-                  background: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)",
-                  borderRadius: "3px 0 0 3px", opacity: 0.75,
-                }} />
+            {/* Explanation */}
+            {detail.explanation ? (
+              <div style={{ background: isCorrect ? "var(--color-accent-tint)" : "var(--color-card)", border: `1px solid ${isCorrect ? "var(--color-border)" : "var(--color-border)"}`, borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
                 <div style={{ paddingLeft: 14 }}>
-                  <div style={{
-                    fontSize: "var(--text-xs)", fontWeight: 700,
-                    letterSpacing: "0.07em", textTransform: "uppercase",
-                    color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)",
-                    marginBottom: 8,
-                  }}>
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: isCorrect ? "var(--color-accent)" : isWrong ? "var(--color-error)" : "var(--color-text-secondary)", marginBottom: 8 }}>
                     {isCorrect ? "✓ Верно" : isWrong ? "✗ Есть ошибка" : "Комментарий"}
                   </div>
                   <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-loose)" }}>
-                    <InlineText text={detail.explanation} />
+                    {detail.explanation}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", textAlign: "center", padding: "12px 0", margin: 0 }}>
+                Разбор недоступен
+              </p>
+            )}
+
+            {/* Nudge question */}
+            {detail.nudge_question && (
+              <div style={{ background: "var(--color-accent-tint)", border: "1px solid rgba(94,236,216,0.18)", borderRadius: "var(--radius-xl)", padding: "var(--space-5)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: "var(--color-accent)", borderRadius: "3px 0 0 3px", opacity: 0.75 }} />
+                <div style={{ paddingLeft: 14 }}>
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-text-muted)", marginBottom: 8 }}>
+                    Подумай
+                  </div>
+                  <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
+                    {detail.nudge_question}
                   </p>
                 </div>
               </div>
             )}
-
-            {/* ── No explanation at all ── */}
-            {!detail.explanation && (
-              <div style={{ textAlign: "center", padding: "12px 0" }}>
-                <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", margin: "0 0 12px" }}>
-                  Разбор недоступен
-                </p>
-                <button onClick={() => setLoadKey(k => k + 1)} style={{
-                  background: "var(--color-surface-2)", border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)", padding: "7px 18px",
-                  color: "var(--color-accent)", fontFamily: "var(--font-body)",
-                  fontSize: "var(--text-sm)", fontWeight: 600, cursor: "pointer",
-                }}>
-                  Повторить
-                </button>
-              </div>
-            )}
-
-            {/* ── Final verdict ── */}
-            {message && (
-              <div style={{
-                background: "var(--color-accent)",
-                borderRadius: "var(--radius-xl)",
-                padding: "var(--space-5)",
-              }}>
-                <div style={{
-                  fontSize: "var(--text-xs)", fontWeight: 700,
-                  letterSpacing: "0.08em", textTransform: "uppercase",
-                  color: "var(--color-bg)", opacity: 0.55, marginBottom: 8,
-                }}>
-                  Итог
-                </div>
-                <p style={{
-                  fontFamily: "var(--font-body)", fontSize: "var(--text-md)",
-                  color: "var(--color-bg)", margin: 0,
-                  lineHeight: "var(--leading-loose)", fontWeight: 500,
-                }}>
-                  {message}
-                </p>
-              </div>
-            )}
-
-            {/* ── Score predictor ── */}
-            {parsed && (
-              <div style={{
-                background: "var(--color-accent-tint)",
-                border: "1px solid rgba(250,223,127,0.2)",
-                borderRadius: "var(--radius-xl)",
-                padding: "var(--space-5)",
-                textAlign: "center",
-              }}>
-                <p style={{
-                  fontFamily: "var(--font-body)", fontSize: "var(--text-base)",
-                  fontWeight: 600, color: "var(--color-accent)",
-                  margin: 0, lineHeight: "var(--leading-normal)",
-                }}>
-                  {isCorrect
-                    ? "Прогноз: +3 балла к твоему результату 🎯"
-                    : "Исправь ошибку → +5 баллов на экзамене"}
-                </p>
-              </div>
-            )}
-
-            {/* ── Закрыть ── */}
-            <button onClick={handleClose} style={{
-              marginTop: 4,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: "100%",
-              background: "transparent",
-              color: "var(--color-text-muted)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-lg)",
-              padding: "13px var(--space-4)",
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-base)", fontWeight: 600,
-              cursor: "pointer",
-            }}>
-              Закрыть
-            </button>
           </div>
+        ) : (
+          <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", textAlign: "center", padding: "20px 0", margin: 0 }}>
+            Не удалось загрузить
+          </p>
         )}
       </div>
-
-      {/* Lightbox */}
-      {imageUrl && lightboxOpen && (
-        <div
-          onClick={() => setLightboxOpen(false)}
-          style={{
-            position: "fixed", inset: 0,
-            background: "rgba(0,0,0,0.85)",
-            zIndex: 100,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            animation: "fadeIn 0.2s ease both",
-          }}
-        >
-          <button
-            onClick={() => setLightboxOpen(false)}
-            style={{
-              position: "absolute", top: 16, right: 16,
-              width: 32, height: 32,
-              background: "none", border: "none", cursor: "pointer",
-              color: "#fff", fontSize: 24, lineHeight: 1,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              padding: 0,
-            }}
-          >
-            ✕
-          </button>
-          <img
-            src={imageUrl}
-            alt=""
-            onClick={e => e.stopPropagation()}
-            style={{ maxWidth: "100%", maxHeight: "100vh", objectFit: "contain", borderRadius: "var(--radius-md)" }}
-          />
-        </div>
-      )}
     </>
   )
 }
@@ -1101,18 +834,18 @@ function SessionSheet({ session, onClose }) {
 // ─── Topic Problems ───────────────────────────────────────────────────────────
 
 const TOPIC_PROBLEMS = {
-  "уравнения":        "Решите уравнение: 2x² - 5x + 3 = 0",
-  "алгебра":          "Упростите: (a+b)² - (a-b)²",
-  "геометрия":        "Катеты прямоугольного треугольника равны 3 и 4. Найдите гипотенузу.",
-  "тригонометрия":    "Решите: sin(x) = √2/2 на отрезке [0; 2π]",
-  "производная":      "Найдите производную: f(x) = x³ - 3x² + 2x",
-  "интеграл":         "Вычислите: ∫(2x + 1)dx",
-  "вероятность":      "В урне 3 белых и 5 чёрных шаров. Найдите вероятность извлечь белый.",
-  "неравенства":      "Решите: x² - 4x - 5 > 0",
-  "функции":          "Найдите область определения: f(x) = √(4 - x²)",
-  "числа":            "Найдите НОД чисел 48 и 36",
-  "статистика":       "Найдите среднее: 4, 7, 2, 9, 3",
-  "текстовая задача": "Поезд прошёл 240 км за 3 часа. Найдите среднюю скорость.",
+  "Уравнения":        "Решите уравнение: 2x² - 5x + 3 = 0",
+  "Алгебра":          "Упростите: (a+b)² - (a-b)²",
+  "Геометрия":        "Катеты прямоугольного треугольника равны 3 и 4. Найдите гипотенузу.",
+  "Тригонометрия":    "Решите: sin(x) = √2/2 на отрезке [0; 2π]",
+  "Производная":      "Найдите производную: f(x) = x³ - 3x² + 2x",
+  "Интеграл":         "Вычислите: ∫(2x + 1)dx",
+  "Вероятность":      "В урне 3 белых и 5 чёрных шаров. Найдите вероятность извлечь белый.",
+  "Неравенства":      "Решите: x² - 4x - 5 > 0",
+  "Функции":          "Найдите область определения: f(x) = √(4 - x²)",
+  "Числа":            "Найдите НОД чисел 48 и 36",
+  "Статистика":       "Найдите среднее: 4, 7, 2, 9, 3",
+  "Текстовая задача": "Поезд прошёл 240 км за 3 часа. Найдите среднюю скорость.",
 }
 
 // ─── Practice Sheet ───────────────────────────────────────────────────────────
@@ -1120,16 +853,10 @@ const TOPIC_PROBLEMS = {
 function PracticeSheet({ topic, onUpload, onClose }) {
   const [visible, setVisible]   = useState(false)
   const [dragging, setDragging] = useState(false)
-  const cameraRef   = useRef(null)
-  const galleryRef  = useRef(null)
-  const onUploadRef = useRef(onUpload)
-  const onCloseRef  = useRef(onClose)
-  useEffect(() => { onUploadRef.current = onUpload }, [onUpload])
-  useEffect(() => { onCloseRef.current  = onClose  }, [onClose])
+  const cameraRef  = useRef(null)
+  const galleryRef = useRef(null)
 
-  const normalizedTopic = (topic ?? "").trim().toLowerCase()
-  const problem = TOPIC_PROBLEMS[normalizedTopic] ?? (normalizedTopic ? `Реши любую задачу по теме: ${normalizedTopic}` : "Реши любую задачу по этой теме")
-  console.log('[PRACTICE] topic:', normalizedTopic, 'problem:', TOPIC_PROBLEMS[normalizedTopic])
+  const problem = TOPIC_PROBLEMS[topic] ?? "Реши задачу по этой теме"
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 16)
@@ -1138,38 +865,16 @@ function PracticeSheet({ topic, onUpload, onClose }) {
 
   const handleClose = () => {
     setVisible(false)
-    setTimeout(() => onCloseRef.current(), 350)
+    setTimeout(onClose, 350)
   }
 
-  const handleFile = useCallback((file) => {
-    if (!file) return
-    if (file.type && !file.type.startsWith("image/")) return
+  const handleFile = (file) => {
+    if (!file || !file.type.startsWith("image/")) return
     setVisible(false)
-    setTimeout(() => onCloseRef.current(), 350)
-    onUploadRef.current(file)
-  }, [])
+    onUpload(file)
+  }
 
-  // Native listeners for iOS Safari reliability (same reasoning as CameraScreen)
-  useEffect(() => {
-    const cam = cameraRef.current
-    const gal = galleryRef.current
-    const onCamChange = (e) => {
-      const file = e.target.files?.[0]
-      if (file) handleFile(file)
-      setTimeout(() => { if (cam) cam.value = "" }, 0)
-    }
-    const onGalChange = (e) => {
-      const file = e.target.files?.[0]
-      if (file) handleFile(file)
-      setTimeout(() => { if (gal) gal.value = "" }, 0)
-    }
-    cam?.addEventListener("change", onCamChange)
-    gal?.addEventListener("change", onGalChange)
-    return () => {
-      cam?.removeEventListener("change", onCamChange)
-      gal?.removeEventListener("change", onGalChange)
-    }
-  }, [handleFile])
+  const handleChange = (e) => { handleFile(e.target.files[0]); e.target.value = "" }
 
   const handleDrop = (e) => {
     e.preventDefault()
@@ -1191,7 +896,6 @@ function PracticeSheet({ topic, onUpload, onClose }) {
         background: "rgba(0,0,0,0.6)",
         zIndex: 60,
         opacity: visible ? 1 : 0,
-        pointerEvents: visible ? "auto" : "none",
         transition: "opacity 0.3s ease",
       }} />
 
@@ -1226,61 +930,31 @@ function PracticeSheet({ topic, onUpload, onClose }) {
           <XIcon />
         </button>
 
-        {/* Header */}
+        {/* Eyebrow */}
         <div style={{
-          fontSize: "var(--text-lg)", fontWeight: 700,
-          color: "var(--color-text-primary)",
-          marginBottom: 4,
-          paddingRight: 40,
+          fontSize: "var(--text-xs)", fontWeight: 700,
+          letterSpacing: "0.08em", textTransform: "uppercase",
+          color: "var(--color-text-muted)", marginBottom: 8,
         }}>
-          Попробуй похожую задачу
-        </div>
-        <div style={{
-          fontSize: "var(--text-xs)", fontWeight: 600,
-          letterSpacing: "0.07em", textTransform: "uppercase",
-          color: "var(--color-text-muted)", marginBottom: 16,
-        }}>
-          {topic}
+          {topic} · Похожая задача
         </div>
 
-        {/* Problem card */}
-        <div style={{
-          background: "var(--color-card)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-lg)",
-          padding: "16px 18px",
-          marginBottom: 20,
-        }}>
-          <p style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-lg)", fontWeight: 500,
-            color: "var(--color-text-primary)",
-            lineHeight: "var(--leading-loose)",
-            margin: 0,
-          }}>
-            {problem}
-          </p>
-        </div>
-
-        {/* Divider */}
-        <div style={{ height: 1, background: "var(--color-border)", marginBottom: 20 }} />
-
-        {/* Instruction */}
+        {/* Problem text */}
         <p style={{
-          fontFamily: "var(--font-body)",
-          fontSize: "var(--text-sm)", fontWeight: 500,
-          color: "var(--color-text-secondary)",
-          margin: "0 0 14px",
+          fontFamily: "var(--font-body)", fontStyle: "italic",
+          fontSize: "var(--text-md)", fontWeight: 500,
+          color: "var(--color-text-primary)",
           lineHeight: "var(--leading-normal)",
+          margin: "0 0 20px",
         }}>
-          Реши на бумаге, затем сфотографируй решение
+          {problem}
         </p>
 
-        {/* Hidden inputs — onChange handled via native listeners in useEffect */}
+        {/* Hidden inputs */}
         <input ref={cameraRef}  type="file" accept="image/*" capture="environment"
-          style={{ display: "none" }} />
+          onChange={handleChange} style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*"
-          style={{ display: "none" }} />
+          onChange={handleChange} style={{ display: "none" }} />
 
         {/* Viewfinder */}
         <div
@@ -1289,7 +963,7 @@ function PracticeSheet({ topic, onUpload, onClose }) {
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
           style={{
-            width: "100%", minHeight: 160,
+            width: "100%", minHeight: 200,
             borderRadius: "var(--radius-2xl)",
             background: "#0C0A09",
             position: "relative", overflow: "hidden",
@@ -1304,8 +978,11 @@ function PracticeSheet({ topic, onUpload, onClose }) {
           ))}
           <div className="viewfinder__scan" />
           <div style={{ textAlign: "center", position: "relative", zIndex: 1, padding: "0 24px" }}>
-            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", margin: 0, letterSpacing: "0.04em" }}>
-              Нажми, чтобы сфотографировать
+            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", margin: "0 0 4px", lineHeight: "var(--leading-normal)" }}>
+              Реши задачу и сфотографируй
+            </p>
+            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)", color: "var(--color-text-muted)", margin: 0, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+              или перетащи файл
             </p>
           </div>
           <button
@@ -1369,10 +1046,10 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
     setIsRethinking(true)
     try {
       const currentExplanation = localSteps[stepIndex]?.explanation ?? ""
-      const { data } = await supabase.functions.invoke('explain', {
+      const { data, error } = await supabase.functions.invoke("explain", {
         body: { rephrase: currentExplanation },
       })
-      if (data?.rephrased) {
+      if (!error && data?.rephrased) {
         setLocalSteps(prev => prev.map((s, i) =>
           i === stepIndex ? { ...s, explanation: data.rephrased } : s
         ))
@@ -1384,7 +1061,8 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
     }
   }
 
-  const isLoading = state === "loading"
+  const isLoading = state === "loading" || state === "ocr_done"
+  const loadingLabel = state === "loading" ? "Распознаю решение..." : "Макс думает..."
   const isCorrect = maxResponse?.is_correct === true
   const isWrong   = maxResponse?.is_correct === false
 
@@ -1540,25 +1218,15 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
         flexDirection: "column",
         gap: 12,
       }}>
-        {/* OCR running */}
+        {/* Loading */}
         {isLoading && (
           <div style={{
             flex: 1, display: "flex",
             alignItems: "center", justifyContent: "center",
             minHeight: 240,
           }}>
-            <DotLoader label="Распознаю решение..." />
+            <DotLoader label={loadingLabel} />
           </div>
-        )}
-
-        {/* OCR done, Claude running — skeleton */}
-        {state === "ocr_done" && (
-          <>
-            <div style={{ animation: "fadeUp 0.25s ease both", paddingBottom: 4 }}>
-              <DotLoader label="Макс разбирает решение..." />
-            </div>
-            {[0, 1, 2].map(i => <SkeletonStepCard key={i} index={i} />)}
-          </>
         )}
 
         {/* OCR uncertain */}
@@ -1661,9 +1329,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {/* Revealed steps so far */}
                 {localSteps.slice(0, stepIndex + 1).map((step, i) => (
-                  <StepCardErrorBoundary key={step.step_number}>
-                    <StepCard step={step} index={i} />
-                  </StepCardErrorBoundary>
+                  <StepCard key={step.step_number} step={step} index={i} />
                 ))}
 
                 {/* Nudge question — shown during step flow once an error is revealed */}
@@ -2193,72 +1859,40 @@ export default function App() {
   }
 
   const handleUpload = useCallback(async (file) => {
-    // Transition to analysis screen FIRST — nothing before these lines should fail silently.
-    // URL.createObjectURL is attempted after, so a failure there doesn't strand the user on home.
+    const localUrl = URL.createObjectURL(file)
+    setThumbnail(localUrl)
     setExplanationState("loading")
     setOcrLatex(null)
     setMaxResponse(null)
 
-    let localUrl = null
-    try {
-      localUrl = URL.createObjectURL(file)
-      setThumbnail(localUrl)
-    } catch (e) {
-      console.error("createObjectURL failed:", e)
-    }
-
     let sessionRow = null
 
     try {
-      // Resize to 600px max, quality 0.7 — used for both OCR and Supabase storage
-      const blob = await new Promise((resolve) => {
+      // Resize to max 800px / quality 0.85 — 3× smaller than 1200px/0.92,
+      // sufficient for Mathpix handwritten OCR
+      const { blob, imageBase64 } = await new Promise((resolve, reject) => {
         const reader = new FileReader()
-        reader.onerror = () => resolve(file)
+        reader.onerror = reject
         reader.onload = () => {
           const img = new Image()
-          img.onerror = () => resolve(file)
+          img.onerror = reject
           img.onload = () => {
-            try {
-              const MAX = 600
-              const w = img.naturalWidth || img.width
-              const h = img.naturalHeight || img.height
-              if (!w || !h) { resolve(file); return }
-              const scale = w > MAX ? MAX / w : 1
-              const canvas = document.createElement("canvas")
-              canvas.width  = Math.round(w * scale)
-              canvas.height = Math.round(h * scale)
-              const ctx = canvas.getContext("2d")
-              if (!ctx) { resolve(file); return }
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-              canvas.toBlob(firstBlob => {
-                if (!firstBlob) { resolve(file); return }
-                if (firstBlob.size > 150 * 1024) {
-                  canvas.toBlob(b => resolve(b || firstBlob), "image/jpeg", 0.5)
-                } else {
-                  resolve(firstBlob)
-                }
-              }, "image/jpeg", 0.7)
-            } catch {
-              resolve(file)
-            }
+            const MAX = 800
+            const scale = img.width > MAX ? MAX / img.width : 1
+            const canvas = document.createElement("canvas")
+            canvas.width  = Math.round(img.width  * scale)
+            canvas.height = Math.round(img.height * scale)
+            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height)
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
+            const imageBase64 = dataUrl.split(',')[1]
+            canvas.toBlob(blob => {
+              if (!blob) reject(new Error("Canvas toBlob failed"))
+              else resolve({ blob, imageBase64 })
+            }, "image/jpeg", 0.85)
           }
           img.src = reader.result
         }
         reader.readAsDataURL(file)
-      })
-
-      console.log('[OCR] Blob size:', blob.size, 'bytes')
-
-      // Derive base64 from the resized blob for OCR
-      const imageBase64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onerror = reject
-        reader.onload = () => {
-          const b64 = reader.result?.split(',')[1]
-          if (b64) resolve(b64)
-          else reject(new Error("FileReader base64 failed"))
-        }
-        reader.readAsDataURL(blob)
       })
 
       // Build session insert promise (parallel with OCR — they're independent)
@@ -2288,14 +1922,14 @@ export default function App() {
 
       // Fire OCR immediately — don't wait for session insert
       const [ocrResult, insertedRow] = await Promise.all([
-        supabase.functions.invoke('ocr', { body: { image: imageBase64 } }),
+        supabase.functions.invoke("ocr", { body: { image: imageBase64 } }),
         sessionInsertPromise,
       ])
       sessionRow = insertedRow
 
-      if (ocrResult.error) throw new Error("OCR failed: " + ocrResult.error.message)
-      const ocrData = ocrResult.data
-      if (!ocrData) throw new Error("OCR returned empty response")
+      const { data: ocrData, error: ocrError } = ocrResult
+      if (ocrError) throw ocrError
+
       const { latex, confidence_flag } = ocrData
 
       // Fire-and-forget — DB persistence doesn't block the user
@@ -2308,17 +1942,15 @@ export default function App() {
 
       setExplanationState("ocr_done")
 
-      const { data: explainData, error: explainError } = await supabase.functions.invoke('explain', {
+      const { data: explainData, error: explainError } = await supabase.functions.invoke("explain", {
         body: { latex, confidence_flag },
       })
-      if (explainError) throw new Error("Explain failed: " + explainError.message)
-      if (!explainData || typeof explainData !== "object") throw new Error("Empty explain response")
+      if (explainError) throw explainError
 
       // Fire-and-forget — DB persistence doesn't block the user
-      // Store full JSON so history can render step-by-step cards
       if (sessionRow?.id) {
         supabase.from("sessions").update({
-          explanation: JSON.stringify(explainData),
+          explanation: explainData.message,
           topic: explainData.topic,
           is_correct: explainData.is_correct,
           nudge_question: explainData.nudge_question,
