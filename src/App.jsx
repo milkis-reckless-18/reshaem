@@ -3,7 +3,8 @@ import katex from "katex"
 import { supabase } from "./lib/supabase"
 import reshaemLogo from "./assets/reshaem-logo.svg"
 
-const API_URL = import.meta.env.VITE_API_URL || ""
+const SUPABASE_URL     = import.meta.env.VITE_SUPABASE_URL ?? ""
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ""
 
 // Preprocess math notation into speakable Russian before sending to TTS.
 function preprocessForTTS(text) {
@@ -57,15 +58,7 @@ function preprocessForTTS(text) {
 // Shared AudioContext — created once, reused across all TTS buttons.
 // Calling ctx.resume() synchronously inside a user-gesture handler captures
 // the browser's autoplay permission so source.start() works after async gaps.
-const getAudioCtx = (() => {
-  let ctx = null
-  return () => {
-    if (!ctx || ctx.state === "closed") {
-      ctx = new (window.AudioContext || window.webkitAudioContext)()
-    }
-    return ctx
-  }
-})()
+const speakUrl = () => `${SUPABASE_URL}/functions/v1/speak`
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -158,61 +151,36 @@ function DotLoader({ label }) {
 
 function PlayButton({ text }) {
   const [status, setStatus] = useState("idle")
-  const sourceRef = useRef(null)  // { node: AudioBufferSourceNode, cancel: fn }
-  const bufferRef = useRef(null)  // decoded AudioBuffer
-  const offsetRef = useRef(0)     // pause position in seconds
-  const startRef  = useRef(0)     // ctx.currentTime when playback last began
+  const audioRef = useRef(null)
+  const urlRef   = useRef(null)
 
   useEffect(() => () => {
-    sourceRef.current?.cancel()
-    try { sourceRef.current?.node.stop() } catch (_) {}
+    audioRef.current?.pause()
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current)
   }, [])
 
-  const startNode = (buffer, offset) => {
-    const ctx = getAudioCtx()
-    let cancelled = false
-    const node = ctx.createBufferSource()
-    node.buffer = buffer
-    node.connect(ctx.destination)
-    node.onended = () => {
-      if (!cancelled) { setStatus("idle"); offsetRef.current = 0 }
-    }
-    sourceRef.current = { node, cancel: () => { cancelled = true } }
-    startRef.current = ctx.currentTime
-    node.start(0, offset)
-    setStatus("playing")
-  }
-
   const handleClick = () => {
-    const ctx = getAudioCtx()
+    if (status === "playing") { audioRef.current?.pause(); setStatus("paused"); return }
+    if (status === "paused")  { audioRef.current?.play().catch(() => {}); setStatus("playing"); return }
+    if (status === "loading") return
 
-    if (status === "playing") {
-      const elapsed = ctx.currentTime - startRef.current
-      offsetRef.current = Math.min(offsetRef.current + elapsed, bufferRef.current?.duration ?? 0)
-      sourceRef.current?.cancel()
-      try { sourceRef.current?.node.stop() } catch (_) {}
-      setStatus("paused")
-      return
-    }
-    if (status === "paused") {
-      ctx.resume().then(() => startNode(bufferRef.current, offsetRef.current))
-      return
-    }
-
-    // ── Mobile fix: resume AudioContext synchronously inside the tap handler.
-    // This captures the browser's autoplay permission so node.start() works
-    // after the async fetch without being blocked.
-    ctx.resume()
     setStatus("loading")
 
-    fetch(`${API_URL}/speak`, {
+    fetch(speakUrl(), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ text: preprocessForTTS(text) }),
     })
-      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
-      .then(buf => ctx.decodeAudioData(buf))
-      .then(decoded => { bufferRef.current = decoded; offsetRef.current = 0; startNode(decoded, 0) })
+      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.blob() })
+      .then(blob => {
+        const url = URL.createObjectURL(blob)
+        urlRef.current = url
+        const audio = new Audio(url)
+        audioRef.current = audio
+        audio.onended = () => { URL.revokeObjectURL(url); urlRef.current = null; setStatus("idle") }
+        return audio.play()
+      })
+      .then(() => setStatus("playing"))
       .catch(err => { console.error("TTS failed:", err); setStatus("idle") })
   }
 
@@ -250,58 +218,36 @@ function PlayButton({ text }) {
 
 function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveColor = "rgba(94,236,216,0.38)" }) {
   const [status, setStatus] = useState("idle")
-  const sourceRef = useRef(null)
-  const bufferRef = useRef(null)
-  const offsetRef = useRef(0)
-  const startRef  = useRef(0)
+  const audioRef = useRef(null)
+  const urlRef   = useRef(null)
 
   useEffect(() => () => {
-    sourceRef.current?.cancel()
-    try { sourceRef.current?.node.stop() } catch (_) {}
+    audioRef.current?.pause()
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current)
   }, [])
 
-  const startNode = (buffer, offset) => {
-    const ctx = getAudioCtx()
-    let cancelled = false
-    const node = ctx.createBufferSource()
-    node.buffer = buffer
-    node.connect(ctx.destination)
-    node.onended = () => {
-      if (!cancelled) { setStatus("idle"); offsetRef.current = 0 }
-    }
-    sourceRef.current = { node, cancel: () => { cancelled = true } }
-    startRef.current = ctx.currentTime
-    node.start(0, offset)
-    setStatus("playing")
-  }
-
   const handleClick = () => {
-    const ctx = getAudioCtx()
+    if (status === "playing") { audioRef.current?.pause(); setStatus("paused"); return }
+    if (status === "paused")  { audioRef.current?.play().catch(() => {}); setStatus("playing"); return }
+    if (status === "loading") return
 
-    if (status === "playing") {
-      const elapsed = ctx.currentTime - startRef.current
-      offsetRef.current = Math.min(offsetRef.current + elapsed, bufferRef.current?.duration ?? 0)
-      sourceRef.current?.cancel()
-      try { sourceRef.current?.node.stop() } catch (_) {}
-      setStatus("paused")
-      return
-    }
-    if (status === "paused") {
-      ctx.resume().then(() => startNode(bufferRef.current, offsetRef.current))
-      return
-    }
-
-    ctx.resume() // synchronous gesture capture — same fix as PlayButton
     setStatus("loading")
 
-    fetch(`${API_URL}/speak`, {
+    fetch(speakUrl(), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ text: preprocessForTTS(text) }),
     })
-      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.arrayBuffer() })
-      .then(buf => ctx.decodeAudioData(buf))
-      .then(decoded => { bufferRef.current = decoded; offsetRef.current = 0; startNode(decoded, 0) })
+      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.blob() })
+      .then(blob => {
+        const url = URL.createObjectURL(blob)
+        urlRef.current = url
+        const audio = new Audio(url)
+        audioRef.current = audio
+        audio.onended = () => { URL.revokeObjectURL(url); urlRef.current = null; setStatus("idle") }
+        return audio.play()
+      })
+      .then(() => setStatus("playing"))
       .catch(err => { console.error("TTS failed:", err); setStatus("idle") })
   }
 
@@ -1403,12 +1349,9 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
     setIsRethinking(true)
     try {
       const currentExplanation = localSteps[stepIndex]?.explanation ?? ""
-      const rephraseRes = await fetch(`${API_URL}/explain`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rephrase: currentExplanation }),
+      const { data } = await supabase.functions.invoke('explain', {
+        body: { rephrase: currentExplanation },
       })
-      const data = rephraseRes.ok ? await rephraseRes.json() : null
       if (data?.rephrased) {
         setLocalSteps(prev => prev.map((s, i) =>
           i === stepIndex ? { ...s, explanation: data.rephrased } : s
@@ -2247,20 +2190,7 @@ export default function App() {
     let sessionRow = null
 
     try {
-      // Read the raw file as base64 for OCR — more reliable than canvas on iOS
-      // (canvas can produce blank output for HEIC/large camera photos on iOS Safari)
-      const imageBase64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onerror = reject
-        reader.onload = () => {
-          const b64 = reader.result?.split(',')[1]
-          if (b64) resolve(b64)
-          else reject(new Error("FileReader produced empty result"))
-        }
-        reader.readAsDataURL(file)
-      })
-
-      // Separately create a resized blob for Supabase storage (best-effort; falls back to original)
+      // Resize to 600px max, quality 0.7 — used for both OCR and Supabase storage
       const blob = await new Promise((resolve) => {
         const reader = new FileReader()
         reader.onerror = () => resolve(file)
@@ -2269,7 +2199,7 @@ export default function App() {
           img.onerror = () => resolve(file)
           img.onload = () => {
             try {
-              const MAX = 800
+              const MAX = 600
               const w = img.naturalWidth || img.width
               const h = img.naturalHeight || img.height
               if (!w || !h) { resolve(file); return }
@@ -2280,7 +2210,14 @@ export default function App() {
               const ctx = canvas.getContext("2d")
               if (!ctx) { resolve(file); return }
               ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-              canvas.toBlob(b => resolve(b || file), "image/jpeg", 0.85)
+              canvas.toBlob(firstBlob => {
+                if (!firstBlob) { resolve(file); return }
+                if (firstBlob.size > 150 * 1024) {
+                  canvas.toBlob(b => resolve(b || firstBlob), "image/jpeg", 0.5)
+                } else {
+                  resolve(firstBlob)
+                }
+              }, "image/jpeg", 0.7)
             } catch {
               resolve(file)
             }
@@ -2288,6 +2225,20 @@ export default function App() {
           img.src = reader.result
         }
         reader.readAsDataURL(file)
+      })
+
+      console.log('[OCR] Blob size:', blob.size, 'bytes')
+
+      // Derive base64 from the resized blob for OCR
+      const imageBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onerror = reject
+        reader.onload = () => {
+          const b64 = reader.result?.split(',')[1]
+          if (b64) resolve(b64)
+          else reject(new Error("FileReader base64 failed"))
+        }
+        reader.readAsDataURL(blob)
       })
 
       // Build session insert promise (parallel with OCR — they're independent)
@@ -2316,16 +2267,14 @@ export default function App() {
       }
 
       // Fire OCR immediately — don't wait for session insert
-      const [ocrData, insertedRow] = await Promise.all([
-        fetch(`${API_URL}/ocr`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: imageBase64 }),
-        }).then(r => r.json()),
+      const [ocrResult, insertedRow] = await Promise.all([
+        supabase.functions.invoke('ocr', { body: { image: imageBase64 } }),
         sessionInsertPromise,
       ])
       sessionRow = insertedRow
 
+      if (ocrResult.error) throw new Error("OCR failed: " + ocrResult.error.message)
+      const ocrData = ocrResult.data
       const { latex, confidence_flag } = ocrData
 
       // Fire-and-forget — DB persistence doesn't block the user
@@ -2338,13 +2287,10 @@ export default function App() {
 
       setExplanationState("ocr_done")
 
-      const explainRes = await fetch(`${API_URL}/explain`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ latex, confidence_flag }),
+      const { data: explainData, error: explainError } = await supabase.functions.invoke('explain', {
+        body: { latex, confidence_flag },
       })
-      if (!explainRes.ok) throw new Error("Explain request failed")
-      const explainData = await explainRes.json()
+      if (explainError) throw new Error("Explain failed: " + explainError.message)
       if (!explainData || typeof explainData !== "object") throw new Error("Empty explain response")
 
       // Fire-and-forget — DB persistence doesn't block the user
