@@ -166,12 +166,13 @@ function PlayButton({ text }) {
 
     setStatus("loading")
 
-    fetch(speakUrl(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ text: preprocessForTTS(text) }),
+    supabase.functions.invoke('speak', {
+      body: { text: preprocessForTTS(text) },
     })
-      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.blob() })
+      .then(({ data, error }) => {
+        if (error) throw new Error("TTS " + error.message)
+        return data
+      })
       .then(blob => {
         const url = URL.createObjectURL(blob)
         urlRef.current = url
@@ -181,7 +182,11 @@ function PlayButton({ text }) {
         return audio.play()
       })
       .then(() => setStatus("playing"))
-      .catch(err => { console.error("TTS failed:", err); setStatus("idle") })
+      .catch(err => {
+        console.error("TTS failed:", err)
+        if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null }
+        setStatus("idle")
+      })
   }
 
   return (
@@ -233,12 +238,13 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
 
     setStatus("loading")
 
-    fetch(speakUrl(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ text: preprocessForTTS(text) }),
+    supabase.functions.invoke('speak', {
+      body: { text: preprocessForTTS(text) },
     })
-      .then(r => { if (!r.ok) throw new Error("TTS " + r.status); return r.blob() })
+      .then(({ data, error }) => {
+        if (error) throw new Error("TTS " + error.message)
+        return data
+      })
       .then(blob => {
         const url = URL.createObjectURL(blob)
         urlRef.current = url
@@ -248,7 +254,11 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
         return audio.play()
       })
       .then(() => setStatus("playing"))
-      .catch(err => { console.error("TTS failed:", err); setStatus("idle") })
+      .catch(err => {
+        console.error("TTS failed:", err)
+        if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null }
+        setStatus("idle")
+      })
   }
 
   return (
@@ -2275,6 +2285,7 @@ export default function App() {
 
       if (ocrResult.error) throw new Error("OCR failed: " + ocrResult.error.message)
       const ocrData = ocrResult.data
+      if (!ocrData) throw new Error("OCR returned empty response")
       const { latex, confidence_flag } = ocrData
 
       // Fire-and-forget — DB persistence doesn't block the user
