@@ -10,14 +10,20 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
-    console.log('Received keys:', Object.keys(body))
-    console.log('Image field exists:', !!body.image)
-    console.log('Image length:', body.image?.length || 0)
-    console.log('Image prefix (first 40 chars):', body.image?.slice(0, 40))
+    const imageSizeKB = Math.round((body.image?.length || 0) * 0.75 / 1024)
+    console.log('[OCR] Received image size:', imageSizeKB, 'KB')
 
     if (!body.image) {
       return new Response(
         JSON.stringify({ error: 'Missing image field', confidence_flag: 'ocr_uncertain' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      )
+    }
+
+    if (imageSizeKB > 500) {
+      console.log('[OCR] Image too large, returning ocr_uncertain')
+      return new Response(
+        JSON.stringify({ latex: '', confidence_flag: 'ocr_uncertain' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       )
     }

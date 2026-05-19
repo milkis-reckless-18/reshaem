@@ -17,6 +17,26 @@ Deno.serve(async (req) => {
       })
     }
 
+    const spoken = text
+      .replace(/1\/2/g, 'одна вторая')
+      .replace(/1\/4/g, 'одна четвёртая')
+      .replace(/1\/3/g, 'одна третья')
+      .replace(/3\/2/g, 'три вторых')
+      .replace(/sqrt\(/g, 'корень из ')
+      .replace(/cos\(/g, 'косинус от ')
+      .replace(/sin\(/g, 'синус от ')
+      .replace(/tan\(/g, 'тангенс от ')
+      .replace(/ln\(/g, 'натуральный логарифм от ')
+      .replace(/log\(/g, 'логарифм от ')
+      .replace(/\^/g, ' в степени ')
+      .replace(/\//g, ' делить на ')
+      .replace(/>=/g, ' больше или равно ')
+      .replace(/<=/g, ' меньше или равно ')
+      .replace(/=>/g, ' следовательно ')
+      .replace(/ - /g, ' минус ')
+      .replace(/ \+ /g, ' плюс ')
+      .replace(/ = /g, ' равно ')
+
     const r = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
@@ -25,7 +45,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'tts-1',
-        input: text,
+        input: spoken,
         voice: 'echo',
       }),
     })
