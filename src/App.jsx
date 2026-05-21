@@ -1,6 +1,8 @@
 ﻿import { useState, useRef, useCallback, useEffect } from "react"
 import { renderToString } from "katex"
 import { supabase } from "./lib/supabase"
+import { MathDisplay, ErrorBoundary } from "./components/MathDisplay.jsx"
+import ReactCrop from "react-image-crop"
 import reshaemLogo from "./assets/reshaem-logo.svg"
 
 // Preprocess math notation into speakable Russian before sending to TTS.
@@ -309,7 +311,8 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
       borderRadius: "var(--radius-full)",
       background: "rgba(94,236,216,0.15)",
       border: "none",
-      display: "flex", alignItems: "center", justifyContent: "center",
+      display: "none",
+      alignItems: "center", justifyContent: "center",
       cursor: "pointer", flexShrink: 0, padding: 0,
       color: status === "playing" ? activeColor : inactiveColor,
       transition: "color 0.15s ease",
@@ -324,10 +327,13 @@ function StepPlayButton({ text, activeColor = "var(--color-accent)", inactiveCol
 // ─── KaTeX Math Renderer ──────────────────────────────────────────────────────
 
 function hasMath(text) {
-  // Only attempt KaTeX for actual LaTeX commands (backslash + letter).
-  // Plain algebraic text like "x = 5" or "2x^2 + 1" must render as plain text
-  // because KaTeX math mode silently strips all spaces, causing words to run together.
-  return text && /\\[a-zA-Z]/.test(text)
+  if (!text) return false
+  return (
+    /\\[a-zA-Z]/.test(text) ||
+    /[_^]/.test(text) ||
+    /\\\(/.test(text) ||
+    /\\\[/.test(text)
+  )
 }
 
 function MathField({ text }) {
@@ -397,7 +403,9 @@ function StepCard({ step, index }) {
             textDecoration: isError ? "line-through" : "none",
             textDecorationColor: "rgba(201,123,106,0.5)",
           }}>
-            <MathField text={cleanWork} />
+            <ErrorBoundary fallback={<span style={{ fontStyle: "italic" }}>{cleanWork}</span>}>
+              <MathDisplay text={cleanWork} />
+            </ErrorBoundary>
           </span>
         </div>
 
@@ -411,12 +419,13 @@ function StepCard({ step, index }) {
             marginBottom: step.explanation ? 4 : 0,
           }}>
             <span style={{ color: "var(--color-accent)" }}>
-              <MathField text={String(step.correction).trim()} />
+              <ErrorBoundary fallback={<span style={{ fontStyle: "italic" }}>{String(step.correction).trim()}</span>}>
+                <MathDisplay text={String(step.correction).trim()} />
+              </ErrorBoundary>
             </span>
           </div>
         )}
 
-        {/* explanation — completely separate div, plain text only, always spaced from above */}
         {step.explanation && (
           <div style={{
             marginTop: 8,
@@ -424,7 +433,9 @@ function StepCard({ step, index }) {
             color: "var(--color-text-muted)",
             lineHeight: "var(--leading-normal)",
           }}>
-            {step.explanation}
+            <ErrorBoundary fallback={<span>{step.explanation}</span>}>
+              <MathDisplay text={step.explanation} />
+            </ErrorBoundary>
           </div>
         )}
       </div>
@@ -856,7 +867,12 @@ function PracticeSheet({ topic, onUpload, onClose }) {
   const cameraRef  = useRef(null)
   const galleryRef = useRef(null)
 
-  const problem = TOPIC_PROBLEMS[topic] ?? "Реши задачу по этой теме"
+  const normalizedTopic = (topic ?? '').trim()
+  const lookupKey = normalizedTopic
+    ? normalizedTopic.charAt(0).toUpperCase() + normalizedTopic.slice(1)
+    : ''
+  const problem = TOPIC_PROBLEMS[lookupKey] ?? (normalizedTopic ? `Реши любую задачу по теме: ${normalizedTopic}` : 'Реши любую задачу по этой теме')
+  console.log('[PRACTICE] topic:', normalizedTopic, 'lookupKey:', lookupKey, 'found:', !!TOPIC_PROBLEMS[lookupKey])
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 16)
@@ -1002,6 +1018,163 @@ function PracticeSheet({ topic, onUpload, onClose }) {
         </div>
       </div>
     </>
+  )
+}
+
+// ─── Photo Preview Screen ────────────────────────────────────────────────────
+
+function PhotoPreviewScreen({ file, onConfirm, onCancel }) {
+  const [imgSrc, setImgSrc]   = useState(null)
+  const [crop, setCrop]       = useState(undefined)
+  const [isLoaded, setIsLoaded] = useState(false)
+  const imgRef                = useRef(null)
+
+  useEffect(() => {
+    // Use FileReader instead of createObjectURL so the data survives iOS
+    // backgrounding the browser when it switches to the camera app.
+    setIsLoaded(false)
+    setCrop(undefined)
+    const reader = new FileReader()
+    reader.onload = () => setImgSrc(reader.result)
+    reader.readAsDataURL(file)
+  }, [file])
+
+  const onImageLoad = (e) => {
+    const { width, height } = e.currentTarget
+    setCrop({
+      unit: "px",
+      x: Math.round(width  * 0.1),
+      y: Math.round(height * 0.1),
+      width:  Math.round(width  * 0.8),
+      height: Math.round(height * 0.8),
+    })
+    setIsLoaded(true)
+  }
+
+  const handleConfirm = () => {
+    const img = imgRef.current
+    if (!img || !crop?.width || !crop?.height) { onConfirm(file); return }
+
+    const scaleX = img.naturalWidth  / img.width
+    const scaleY = img.naturalHeight / img.height
+
+    const sx = Math.round(crop.x      * scaleX)
+    const sy = Math.round(crop.y      * scaleY)
+    const sw = Math.round(crop.width  * scaleX)
+    const sh = Math.round(crop.height * scaleY)
+
+    const MAX    = 600
+    const scale  = Math.max(sw, sh) > MAX ? MAX / Math.max(sw, sh) : 1
+    const dw     = Math.round(sw * scale)
+    const dh     = Math.round(sh * scale)
+
+    const canvas = document.createElement("canvas")
+    canvas.width  = dw
+    canvas.height = dh
+    const ctx = canvas.getContext("2d")
+    if (!ctx) { onConfirm(file); return }
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh)
+
+    // Use toDataURL → atob → Blob (avoids toBlob callback reliability issues on mobile)
+    const dataUrl  = canvas.toDataURL("image/jpeg", 0.85)
+    const b64      = dataUrl.split(",")[1]
+    const binary   = atob(b64)
+    const bytes    = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    onConfirm(new Blob([bytes], { type: "image/jpeg" }))
+  }
+
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column",
+      height: "100dvh", background: "var(--color-bg)",
+      maxWidth: 480, margin: "0 auto",
+      overflow: "hidden",
+    }}>
+      {/* Header */}
+      <header style={{
+        padding: "14px var(--screen-px)",
+        flexShrink: 0,
+        display: "flex", alignItems: "center", gap: 12,
+        borderBottom: "1px solid var(--color-border)",
+      }}>
+        <button
+          onClick={onCancel}
+          style={{
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-md)",
+            width: 36, height: 36,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "var(--color-text-secondary)",
+            cursor: "pointer", padding: 0, flexShrink: 0,
+          }}
+        >
+          <ArrowLeftIcon />
+        </button>
+        <div style={{
+          fontFamily: "var(--font-display)",
+          fontSize: "var(--text-lg)",
+          fontWeight: 700,
+          letterSpacing: "var(--tracking-tight)",
+          color: "var(--color-text-primary)",
+        }}>
+          Выдели решение
+        </div>
+      </header>
+
+      {/* Crop area */}
+      <div style={{
+        flex: 1,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "12px var(--screen-px)",
+        minHeight: 0, overflow: "hidden",
+      }}>
+        {imgSrc && (
+          <ReactCrop
+            crop={crop}
+            onChange={(c) => setCrop(c)}
+            minWidth={40}
+            minHeight={40}
+            keepSelection
+            style={{ maxWidth: "100%", maxHeight: "100%" }}
+          >
+            <img
+              ref={imgRef}
+              src={imgSrc}
+              onLoad={onImageLoad}
+              style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }}
+              alt=""
+            />
+          </ReactCrop>
+        )}
+      </div>
+
+      {/* Confirm */}
+      <div style={{ padding: "12px var(--screen-px) 36px", flexShrink: 0 }}>
+        <button
+          onClick={handleConfirm}
+          disabled={!isLoaded}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: "100%",
+            background: isLoaded ? "var(--color-accent)" : "var(--color-surface)",
+            color: isLoaded ? "var(--color-bg)" : "var(--color-text-secondary)",
+            border: "none",
+            borderRadius: "var(--radius-lg)",
+            padding: "15px var(--space-6)",
+            fontFamily: "var(--font-display)",
+            fontSize: 16, fontWeight: 700,
+            letterSpacing: "-0.01em",
+            cursor: isLoaded ? "pointer" : "default",
+            boxShadow: isLoaded ? "0 4px 24px rgba(94,236,216,0.2)" : "none",
+            transition: "background 0.2s ease, color 0.2s ease",
+          }}
+        >
+          {isLoaded ? "Анализировать →" : "Загрузка..."}
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -1812,12 +1985,14 @@ export default function App() {
   const [userId, setUserId] = useState(null)
   const [thumbnail, setThumbnail] = useState(null)
   const [explanationState, setExplanationState] = useState("idle")
+  const [pendingFile, setPendingFile] = useState(null)
   const [ocrLatex, setOcrLatex] = useState(null)
   const [maxResponse, setMaxResponse] = useState(null)
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [selectedSession, setSelectedSession] = useState(null)
+  const blobUrlRef = useRef(null)
 
   useEffect(() => {
     const isDemo = new URLSearchParams(window.location.search).get("demo") === "true"
@@ -1860,16 +2035,16 @@ export default function App() {
 
   const handleUpload = useCallback(async (file) => {
     const localUrl = URL.createObjectURL(file)
+    blobUrlRef.current = localUrl
     setThumbnail(localUrl)
     setExplanationState("loading")
     setOcrLatex(null)
     setMaxResponse(null)
 
-    let sessionRow = null
-
     try {
-      // Resize to max 800px / quality 0.85 — 3× smaller than 1200px/0.92,
-      // sufficient for Mathpix handwritten OCR
+      // Resize to max 800px / quality 0.85.
+      // Avoids canvas.toBlob — its callback silently never fires on some mobile browsers.
+      // Instead: toDataURL (synchronous) → base64 → Blob via atob (always works).
       const { blob, imageBase64 } = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onerror = reject
@@ -1877,79 +2052,82 @@ export default function App() {
           const img = new Image()
           img.onerror = reject
           img.onload = () => {
-            const MAX = 800
-            const scale = img.width > MAX ? MAX / img.width : 1
-            const canvas = document.createElement("canvas")
-            canvas.width  = Math.round(img.width  * scale)
-            canvas.height = Math.round(img.height * scale)
-            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height)
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
-            const imageBase64 = dataUrl.split(',')[1]
-            canvas.toBlob(blob => {
-              if (!blob) reject(new Error("Canvas toBlob failed"))
-              else resolve({ blob, imageBase64 })
-            }, "image/jpeg", 0.85)
+            try {
+              const MAX = 800
+              const scale = img.width > MAX ? MAX / img.width : 1
+              const canvas = document.createElement("canvas")
+              canvas.width  = Math.round(img.width  * scale)
+              canvas.height = Math.round(img.height * scale)
+              const ctx = canvas.getContext("2d")
+              if (!ctx) { reject(new Error("Canvas 2d context unavailable")); return }
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
+              const imageBase64 = dataUrl.split(",")[1]
+              const binary = atob(imageBase64)
+              const bytes = new Uint8Array(binary.length)
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+              const blob = new Blob([bytes], { type: "image/jpeg" })
+              resolve({ blob, imageBase64 })
+            } catch (e) {
+              reject(e)
+            }
           }
           img.src = reader.result
         }
         reader.readAsDataURL(file)
       })
 
-      // Build session insert promise (parallel with OCR — they're independent)
-      let sessionInsertPromise = Promise.resolve(null)
+      // Session persistence: upload → insert, runs fully in background alongside OCR.
+      // Never blocks the user-facing flow.
+      let sessionRowPromise = Promise.resolve(null)
       if (userId) {
         const path = `${userId}/${Date.now()}.jpg`
         const { data: { publicUrl } } = supabase.storage.from("solution-images").getPublicUrl(path)
 
-        supabase.storage.from("solution-images")
+        sessionRowPromise = supabase.storage.from("solution-images")
           .upload(path, blob, { contentType: "image/jpeg" })
-          .catch(err => console.warn("Storage upload failed:", err.message))
-
-        sessionInsertPromise = supabase
-          .from("sessions")
-          .insert({ user_id: userId, image_url: publicUrl })
-          .select("id, image_url, created_at")
-          .single()
+          .then(() =>
+            supabase
+              .from("sessions")
+              .insert({ user_id: userId, image_url: publicUrl })
+              .select("id, image_url, created_at")
+              .single()
+          )
           .then(({ data: row, error }) => {
             if (!error && row) {
-              setHistory(prev => [{ ...row, image_url: localUrl }, ...prev])
+              setHistory(prev => [row, ...prev])
               return row
             }
             return null
           })
-          .catch(() => null)
+          .catch(err => {
+            console.warn("Storage/session failed:", err?.message)
+            return null
+          })
       }
 
-      // Fire OCR immediately — don't wait for session insert
-      const [ocrResult, insertedRow] = await Promise.all([
-        supabase.functions.invoke("ocr", { body: { image: imageBase64 } }),
-        sessionInsertPromise,
-      ])
-      sessionRow = insertedRow
-
-      const { data: ocrData, error: ocrError } = ocrResult
+      // OCR runs immediately — not gated on storage upload
+      const { data: ocrData, error: ocrError } = await supabase.functions.invoke("ocr", {
+        body: { image: imageBase64 },
+      })
       if (ocrError) throw ocrError
 
       const { latex, confidence_flag } = ocrData
-
-      // Fire-and-forget — DB persistence doesn't block the user
-      if (sessionRow?.id) {
-        supabase.from("sessions").update({ ocr_result: latex }).eq("id", sessionRow.id)
-          .then(null, () => {})
-      }
-
       setOcrLatex(latex)
-
       setExplanationState("ocr_done")
 
-      const { data: explainData, error: explainError } = await supabase.functions.invoke("explain", {
-        body: { latex, confidence_flag },
-      })
+      // Explain and session persistence race in parallel; explain always wins on timing
+      const [explainResult, sessionRow] = await Promise.all([
+        supabase.functions.invoke("explain", { body: { latex, confidence_flag } }),
+        sessionRowPromise,
+      ])
+      const { data: explainData, error: explainError } = explainResult
       if (explainError) throw explainError
 
-      // Fire-and-forget — DB persistence doesn't block the user
+      // Single combined update — OCR + explain fields written together
       if (sessionRow?.id) {
         supabase.from("sessions").update({
+          ocr_result: latex,
           explanation: explainData.message,
           topic: explainData.topic,
           is_correct: explainData.is_correct,
@@ -1962,14 +2140,15 @@ export default function App() {
 
     } catch (err) {
       console.error("Upload/OCR error:", err.message)
-      if (!sessionRow && userId) {
-        setHistory(prev => [{ id: Date.now(), image_url: localUrl, created_at: new Date().toISOString() }, ...prev])
-      }
       setExplanationState("error")
     }
   }, [userId])
 
   const resetSession = useCallback(() => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current)
+      blobUrlRef.current = null
+    }
     setThumbnail(null)
     setExplanationState("idle")
     setOcrLatex(null)
@@ -1985,19 +2164,35 @@ export default function App() {
     }
   }, [])
 
+  const handleFileSelected = useCallback((file) => {
+    setPendingFile(file)
+    setExplanationState("preview")
+  }, [])
+
+  const handleCancelPreview = useCallback(() => {
+    setPendingFile(null)
+    setExplanationState("idle")
+  }, [])
+
   return (
     <>
-      {explanationState !== "idle" ? (
+      {explanationState === "preview" ? (
+        <PhotoPreviewScreen
+          file={pendingFile}
+          onConfirm={handleUpload}
+          onCancel={handleCancelPreview}
+        />
+      ) : explanationState !== "idle" ? (
         <AnalysisScreen
           state={explanationState}
           maxResponse={maxResponse}
           thumbnail={thumbnail}
           onReset={resetSession}
-          onUpload={handleUpload}
+          onUpload={handleFileSelected}
         />
       ) : (
         <CameraScreen
-          onUpload={handleUpload}
+          onUpload={handleFileSelected}
           history={history}
           historyLoading={historyLoading}
           onSelectSession={setSelectedSession}
