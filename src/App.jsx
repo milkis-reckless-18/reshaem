@@ -2081,18 +2081,19 @@ export default function App() {
       // Never blocks the user-facing flow.
       let sessionRowPromise = Promise.resolve(null)
       if (userId) {
-        const path = `${userId}/${Date.now()}.jpg`
-        const { data: { publicUrl } } = supabase.storage.from("solution-images").getPublicUrl(path)
+        const path = `${userId}/${Date.now()}-${crypto.randomUUID()}.jpg`
 
         sessionRowPromise = supabase.storage.from("solution-images")
           .upload(path, blob, { contentType: "image/jpeg" })
-          .then(() =>
-            supabase
+          .then(({ error: uploadError }) => {
+            if (uploadError) throw uploadError
+            const { data: { publicUrl } } = supabase.storage.from("solution-images").getPublicUrl(path)
+            return supabase
               .from("sessions")
               .insert({ user_id: userId, image_url: publicUrl })
               .select("id, image_url, created_at")
               .single()
-          )
+          })
           .then(({ data: row, error }) => {
             if (!error && row) {
               setHistory(prev => [row, ...prev])
