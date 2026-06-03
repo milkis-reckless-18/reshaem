@@ -54,6 +54,16 @@ function preprocessForTTS(text) {
     .replace(/<=/g, 'меньше или равно')
 }
 
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
+  })
+}
+
 // Shared AudioContext — created once, reused across all TTS buttons.
 // Calling ctx.resume() synchronously inside a user-gesture handler captures
 // the browser's autoplay permission so source.start() works after async gaps.
@@ -1184,7 +1194,7 @@ const POSITIVE_LABELS = ["Ясно", "Гуд", "Принято", "ОК", "Дал
 const NEGATIVE_LABELS = ["Не ясно", "Не понятно", "Объясни"]
 const pickRandom = arr => arr[Math.floor(Math.random() * arr.length)]
 
-function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
+function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload, uploadError }) {
   const [stepIndex, setStepIndex]       = useState(0)
   const [isRethinking, setIsRethinking] = useState(false)
   const [stepsDone, setStepsDone]       = useState(false)
@@ -1474,6 +1484,22 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
               }}>
                 Не удалось обработать фото. Проверь интернет и попробуй ещё раз.
               </p>
+              {uploadError && (
+                <pre style={{
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  color: "#ff9999",
+                  background: "rgba(0,0,0,0.4)",
+                  borderRadius: 6,
+                  padding: "8px 10px",
+                  margin: "0 0 16px",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-all",
+                  userSelect: "text",
+                }}>
+                  {uploadError.message}{"\n\n"}{uploadError.stack}
+                </pre>
+              )}
               <button
                 onClick={onReset}
                 style={{
@@ -1992,6 +2018,7 @@ export default function App() {
   const [historyLoading, setHistoryLoading] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [selectedSession, setSelectedSession] = useState(null)
+  const [uploadError, setUploadError] = useState(null)
   const blobUrlRef = useRef(null)
 
   useEffect(() => {
@@ -2081,7 +2108,7 @@ export default function App() {
       // Never blocks the user-facing flow.
       let sessionRowPromise = Promise.resolve(null)
       if (userId) {
-        const path = `${userId}/${Date.now()}-${crypto.randomUUID()}.jpg`
+        const path = `${userId}/${Date.now()}-${generateId()}.jpg`
 
         sessionRowPromise = supabase.storage.from("solution-images")
           .upload(path, blob, { contentType: "image/jpeg" })
@@ -2141,6 +2168,7 @@ export default function App() {
 
     } catch (err) {
       console.error("Upload/OCR error:", err.message)
+      setUploadError(err)
       setExplanationState("error")
     }
   }, [userId])
@@ -2154,6 +2182,7 @@ export default function App() {
     setExplanationState("idle")
     setOcrLatex(null)
     setMaxResponse(null)
+    setUploadError(null)
   }, [])
 
   const dismissOnboarding = useCallback(async () => {
@@ -2190,6 +2219,7 @@ export default function App() {
           thumbnail={thumbnail}
           onReset={resetSession}
           onUpload={handleFileSelected}
+          uploadError={uploadError}
         />
       ) : (
         <CameraScreen
