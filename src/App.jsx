@@ -54,6 +54,11 @@ function preprocessForTTS(text) {
     .replace(/<=/g, 'меньше или равно')
 }
 
+// iOS Safari kills the browser tab when switching to the native camera app,
+// wiping React state. Skip capture="environment" on iOS so the picker modal
+// stays in-browser. Android handles the switch without page death.
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
+
 // Shared AudioContext — created once, reused across all TTS buttons.
 // Calling ctx.resume() synchronously inside a user-gesture handler captures
 // the browser's autoplay permission so source.start() works after async gaps.
@@ -498,23 +503,90 @@ function MathBackground() {
 // ─── Camera Screen ────────────────────────────────────────────────────────────
 
 function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
-  const cameraInputRef  = useRef(null)
   const galleryInputRef = useRef(null)
-  const [dragging, setDragging] = useState(false)
+  const fallbackInputRef = useRef(null)  // file input fallback if getUserMedia unavailable
+  const videoRef   = useRef(null)
+  const streamRef  = useRef(null)
+  const [dragging, setDragging]     = useState(false)
+  const [cameraMode, setCameraMode] = useState("idle") // "idle" | "live"
 
-  const handleFile = useCallback((file) => {
-    if (!file || !file.type.startsWith("image/")) return
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+  }, [])
+
+  useEffect(() => () => stopStream(), [stopStream])
+
+  const startCamera = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      fallbackInputRef.current?.click()
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      })
+      streamRef.current = stream
+      setCameraMode("live")
+      // Attach stream after state update so video element is in the DOM
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          videoRef.current.play().catch(() => {})
+        }
+      })
+    } catch {
+      // Permission denied or unavailable — fall back to file input
+      fallbackInputRef.current?.click()
+    }
+  }, [])
+
+  const closeCamera = useCallback(() => {
+    stopStream()
+    setCameraMode("idle")
+  }, [stopStream])
+
+  const captureFrame = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    const MAX = 1200
+    const scale = Math.max(video.videoWidth, video.videoHeight) > MAX
+      ? MAX / Math.max(video.videoWidth, video.videoHeight) : 1
+    const w = Math.round(video.videoWidth  * scale)
+    const h = Math.round(video.videoHeight * scale)
+    const canvas = document.createElement("canvas")
+    canvas.width = w; canvas.height = h
+    canvas.getContext("2d").drawImage(video, 0, 0, w, h)
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.7)
+    const b64 = dataUrl.split(",")[1]
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+    const blob = new Blob([bytes], { type: "image/jpeg" })
+    closeCamera()
+    onUpload(blob)
+  }, [closeCamera, onUpload])
+
+  const handleGalleryFile = useCallback((file) => {
+    if (!file) return
+    const ok = file.type.startsWith("image/") || /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(file.name)
+    if (!ok) return
     onUpload(file)
   }, [onUpload])
 
   const handleDrop = (e) => {
     e.preventDefault()
     setDragging(false)
-    handleFile(e.dataTransfer.files[0])
+    handleGalleryFile(e.dataTransfer.files[0])
   }
 
-  const handleChange = (e) => {
-    handleFile(e.target.files[0])
+  const handleGalleryChange = (e) => {
+    handleGalleryFile(e.target.files[0])
+    e.target.value = ""
+  }
+
+  const handleFallbackChange = (e) => {
+    const file = e.target.files?.[0]
+    if (file) onUpload(file)
     e.target.value = ""
   }
 
@@ -542,17 +614,17 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
         />
       </header>
 
-      {/* Hidden file inputs */}
-      <input ref={cameraInputRef}  type="file" accept="image/*"
-        onChange={handleChange} style={{ display: "none" }} />
-      <input ref={galleryInputRef} type="file" accept="image/*"
-        onChange={handleChange} style={{ display: "none" }} />
+      {/* Hidden file inputs — gallery + getUserMedia fallback */}
+      <input ref={galleryInputRef}  type="file" accept="image/*"
+        onChange={handleGalleryChange} style={{ display: "none" }} />
+      <input ref={fallbackInputRef} type="file" accept="image/*"
+        onChange={handleFallbackChange} style={{ display: "none" }} />
 
       <div className="camera-body">
       {/* Viewfinder — pinned, never scrolls away */}
       <div className="camera-vf-wrap">
         <div
-          onClick={() => cameraInputRef.current?.click()}
+          onClick={cameraMode === "idle" ? startCamera : undefined}
           onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
@@ -573,9 +645,22 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            cursor: "pointer",
+            cursor: cameraMode === "idle" ? "pointer" : "default",
           }}
         >
+          {/* Live camera video — visible only in live mode */}
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            style={{
+              position: "absolute", inset: 0,
+              width: "100%", height: "100%",
+              objectFit: "cover",
+              display: cameraMode === "live" ? "block" : "none",
+            }}
+          />
+
           {/* Corner brackets */}
           {brackets.map((s, i) => (
             <div key={i} style={{
@@ -584,58 +669,99 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
               borderColor: "var(--color-accent)",
               borderStyle: "solid",
               opacity: 0.7,
+              zIndex: 2,
               ...s,
             }} />
           ))}
 
-          {/* Scan line */}
-          <div className="viewfinder__scan" />
+          {/* Scan line — idle only */}
+          {cameraMode === "idle" && <div className="viewfinder__scan" />}
 
-          {/* Center text */}
-          <div style={{ textAlign: "center", position: "relative", zIndex: 1, padding: "0 32px" }}>
-            <p style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-base)",
-              color: "var(--color-text-muted)",
-              margin: "0 0 6px",
-              lineHeight: "var(--leading-normal)",
-            }}>
-              Направь камеру на решение
-            </p>
-            <p style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-xs)",
-              color: "var(--color-text-muted)",
-              margin: 0,
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
-            }}>
-              или перетащи файл сюда
-            </p>
-          </div>
+          {/* Idle: center prompt text */}
+          {cameraMode === "idle" && (
+            <div style={{ textAlign: "center", position: "relative", zIndex: 1, padding: "0 32px" }}>
+              <p style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-base)",
+                color: "var(--color-text-muted)",
+                margin: "0 0 6px",
+                lineHeight: "var(--leading-normal)",
+              }}>
+                Направь камеру на решение
+              </p>
+              <p style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-xs)",
+                color: "var(--color-text-muted)",
+                margin: 0,
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+              }}>
+                или перетащи файл сюда
+              </p>
+            </div>
+          )}
 
-          {/* Gallery icon button — bottom right */}
-          <button
-            onClick={(e) => { e.stopPropagation(); galleryInputRef.current?.click() }}
-            style={{
-              position: "absolute", bottom: 14, right: 14,
-              width: 40, height: 40,
-              borderRadius: "var(--radius-md)",
-              background: "rgba(42,35,32,0.82)",
-              border: "1px solid var(--color-border)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "var(--color-text-secondary)",
-              cursor: "pointer",
-              padding: 0,
-              zIndex: 2,
-              backdropFilter: "blur(6px)",
-              transition: "background 0.18s ease",
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(61,53,48,0.9)"}
-            onMouseLeave={e => e.currentTarget.style.background = "rgba(42,35,32,0.82)"}
-          >
-            <GalleryIcon />
-          </button>
+          {/* Live: shutter + close buttons */}
+          {cameraMode === "live" && (
+            <>
+              {/* Shutter */}
+              <button
+                onClick={(e) => { e.stopPropagation(); captureFrame() }}
+                style={{
+                  position: "absolute", bottom: 20, left: "50%",
+                  transform: "translateX(-50%)",
+                  width: 64, height: 64,
+                  borderRadius: "50%",
+                  background: "rgba(255,255,255,0.92)",
+                  border: "4px solid rgba(255,255,255,0.4)",
+                  cursor: "pointer", padding: 0, zIndex: 3,
+                  boxShadow: "0 2px 16px rgba(0,0,0,0.4)",
+                }}
+              />
+              {/* Close */}
+              <button
+                onClick={(e) => { e.stopPropagation(); closeCamera() }}
+                style={{
+                  position: "absolute", top: 14, right: 14,
+                  width: 36, height: 36,
+                  borderRadius: "50%",
+                  background: "rgba(0,0,0,0.55)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "rgba(255,255,255,0.85)",
+                  cursor: "pointer", padding: 0, zIndex: 3,
+                }}
+              >
+                <XIcon />
+              </button>
+            </>
+          )}
+
+          {/* Gallery icon button — bottom right, idle only */}
+          {cameraMode === "idle" && (
+            <button
+              onClick={(e) => { e.stopPropagation(); galleryInputRef.current?.click() }}
+              style={{
+                position: "absolute", bottom: 14, right: 14,
+                width: 40, height: 40,
+                borderRadius: "var(--radius-md)",
+                background: "rgba(42,35,32,0.82)",
+                border: "1px solid var(--color-border)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+                padding: 0,
+                zIndex: 2,
+                backdropFilter: "blur(6px)",
+                transition: "background 0.18s ease",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(61,53,48,0.9)"}
+              onMouseLeave={e => e.currentTarget.style.background = "rgba(42,35,32,0.82)"}
+            >
+              <GalleryIcon />
+            </button>
+          )}
         </div>
       </div>{/* /camera-vf-wrap */}
 
@@ -884,18 +1010,38 @@ function PracticeSheet({ topic, onUpload, onClose }) {
     setTimeout(onClose, 350)
   }
 
-  const handleFile = (file) => {
-    if (!file || !file.type.startsWith("image/")) return
+  const handleCameraFile = (file) => {
+    if (!file) return
     setVisible(false)
     onUpload(file)
   }
 
-  const handleChange = (e) => { handleFile(e.target.files[0]); e.target.value = "" }
+  const handleGalleryFile = (file) => {
+    if (!file) return
+    const ok = file.type.startsWith("image/") || /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(file.name)
+    if (!ok) return
+    setVisible(false)
+    onUpload(file)
+  }
+
+  useEffect(() => {
+    const input = cameraRef.current
+    if (!input) return
+    const onNativeChange = (e) => {
+      const file = e.target.files?.[0]
+      if (file) { handleCameraFile(file); input.value = "" }
+    }
+    input.addEventListener("change", onNativeChange)
+    return () => input.removeEventListener("change", onNativeChange)
+  }, [])
+
+  const handleCameraChange = (e) => { handleCameraFile(e.target.files[0]); e.target.value = "" }
+  const handleGalleryChange = (e) => { handleGalleryFile(e.target.files[0]); e.target.value = "" }
 
   const handleDrop = (e) => {
     e.preventDefault()
     setDragging(false)
-    handleFile(e.dataTransfer.files[0])
+    handleGalleryFile(e.dataTransfer.files[0])
   }
 
   const brackets = [
@@ -967,10 +1113,10 @@ function PracticeSheet({ topic, onUpload, onClose }) {
         </p>
 
         {/* Hidden inputs */}
-        <input ref={cameraRef}  type="file" accept="image/*"
-          onChange={handleChange} style={{ display: "none" }} />
+        <input ref={cameraRef}  type="file" accept="image/*" {...(!isIOS && { capture: "environment" })}
+          onChange={handleCameraChange} style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*"
-          onChange={handleChange} style={{ display: "none" }} />
+          onChange={handleGalleryChange} style={{ display: "none" }} />
 
         {/* Viewfinder */}
         <div
