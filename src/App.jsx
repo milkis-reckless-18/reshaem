@@ -1484,22 +1484,6 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload, uplo
               }}>
                 Не удалось обработать фото. Проверь интернет и попробуй ещё раз.
               </p>
-              {uploadError && (
-                <pre style={{
-                  fontFamily: "monospace",
-                  fontSize: 11,
-                  color: "#ff9999",
-                  background: "rgba(0,0,0,0.4)",
-                  borderRadius: 6,
-                  padding: "8px 10px",
-                  margin: "0 0 16px",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
-                  userSelect: "text",
-                }}>
-                  {uploadError.message}{"\n\n"}{uploadError.stack}
-                </pre>
-              )}
               <button
                 onClick={onReset}
                 style={{
