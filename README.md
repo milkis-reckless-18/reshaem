@@ -1,171 +1,116 @@
 # Решаем
 
-**Пиши. Фоткай. Понимай.**
+> Пиши. Фоткай. Понимай.
 
-Веб-приложение для подготовки к ЕГЭ по математике. Ученик фотографирует рукописное решение — AI-наставник Макс разбирает его пошагово, никогда не давая готового ответа.
+AI-наставник для подготовки к ЕГЭ по математике. Ученик фотографирует рукописное решение — получает пошаговый разбор от Макса, который никогда не даёт готовый ответ.
 
-🌐 **[reshaem-foundation.website.yandexcloud.net](https://reshaem-foundation.website.yandexcloud.net)**
+**Live:** https://reshaem-foundation.website.yandexcloud.net
 
 ---
 
 ## Как это работает
 
 1. Ученик пишет решение от руки и фотографирует его
-2. Mathpix OCR распознаёт рукописный LaTeX
-3. Claude (Макс) анализирует решение пошагово и задаёт один наводящий вопрос — не даёт ответ
-4. OpenAI TTS озвучивает разбор голосом
-5. История решений сохраняется для отслеживания прогресса
+2. Mathpix OCR переводит фото в LaTeX
+3. Claude анализирует решение и возвращает JSON с пошаговым разбором
+4. Макс ведёт ученика через шаги — один вопрос за раз
+5. OpenAI TTS озвучивает каждый шаг
 
-> **Отличие от Photomath:** мы не решаем за ученика.
+Ключевое отличие от Photomath: Макс **не решает задачу за ученика**.
 
 ---
 
 ## Стек
 
 | Слой | Технология |
-|------|-----------|
-| Фронтенд | React 19 + Vite + Tailwind CSS |
-| Auth + БД | Supabase (анонимная авторизация + RLS) |
-| Хранилище | Supabase Storage |
-| Edge Functions | Supabase (Deno) |
-| OCR | Mathpix API |
-| AI-наставник | Claude claude-sonnet-4-6 (Anthropic) |
-| TTS | OpenAI TTS, голос `echo` |
+|---|---|
+| Фронтенд | React + Vite + Tailwind CSS |
+| Auth + DB | Supabase (анонимная авторизация, таблица sessions) |
+| Storage | Supabase Storage (bucket: solution-images) |
+| OCR | Mathpix API → LaTeX |
+| AI | Claude claude-sonnet-4-6 (Anthropic) |
+| TTS | OpenAI TTS, голос echo |
 | Деплой | Yandex Cloud Object Storage |
+| Edge functions | Supabase (eu-central-1, Frankfurt) |
 
 ---
 
-## Локальная разработка
-
-### Требования
-
-- Node.js 18+
-- Аккаунт Supabase с настроенными Edge Functions
-- API-ключи: Mathpix, Anthropic, OpenAI
-
-### Установка
+## Локальный запуск
 
 ```bash
-git clone https://github.com/milkis-reckless-18/reshaem.git
-cd reshaem
 npm install
+npm run dev
 ```
 
-### Переменные окружения
-
-Создай файл `.env` в корне проекта:
-
-```env
-VITE_SUPABASE_URL=https://<your-project>.supabase.co
-VITE_SUPABASE_ANON_KEY=<publishable-anon-key>
+Нужен файл `.env`:
+```
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
 ```
 
-Секреты для Edge Functions задаются через Supabase Dashboard → Settings → Edge Functions:
-
+Секреты edge functions хранятся в Supabase Dashboard → Edge Functions → Secrets:
 ```
-MATHPIX_APP_ID=
-MATHPIX_APP_KEY=
-ANTHROPIC_API_KEY=
-OPENAI_API_KEY=
-```
-
-### Запуск
-
-```bash
-npm run dev      # dev-сервер на localhost:3000
-npm run build    # production-сборка в dist/
+MATHPIX_APP_ID
+MATHPIX_APP_KEY
+ANTHROPIC_API_KEY
+OPENAI_API_KEY
 ```
 
 ---
 
-## Архитектура
+## Edge functions
 
-```
-Браузер
-  │
-  ├── supabase.auth.signInAnonymously()   # анонимный пользователь
-  ├── Canvas resize → 1200px max          # сжатие изображения
-  ├── Supabase Storage upload             # сохранение фото
-  │
-  ├── /ocr  (Edge Function)
-  │     └── Mathpix API → LaTeX
-  │
-  ├── /explain  (Edge Function)
-  │     └── Claude API → JSON {steps, message, nudge_question, ...}
-  │
-  └── /speak  (Edge Function)
-        └── OpenAI TTS → audio/mpeg
-```
-
-Все Edge Functions требуют валидный Supabase JWT — анонимные пользователи получают его автоматически при инициализации.
+| Функция | Описание |
+|---|---|
+| `/ocr` | Принимает base64 изображение, возвращает LaTeX через Mathpix |
+| `/explain` | Принимает LaTeX, возвращает JSON-разбор от Макса через Claude |
+| `/speak` | Принимает текст, возвращает аудио через OpenAI TTS |
 
 ---
 
-## Схема БД (Supabase)
-
-```sql
-CREATE TABLE sessions (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id     UUID REFERENCES auth.users(id),
-  image_url   TEXT,
-  ocr_result  TEXT,
-  explanation TEXT,
-  topic       TEXT,
-  is_correct  BOOLEAN,
-  nudge_question TEXT,
-  created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "own sessions only"
-  ON sessions FOR ALL USING (auth.uid() = user_id);
-```
-
----
-
-## Деплой
+## Деплой фронтенда
 
 ```bash
 npm run build
-# Загрузи содержимое dist/ в публичный бакет Yandex Cloud Object Storage
-# Бакет: reshaem-foundation, регион: ru-central1
-```
-
-Edge Functions деплоятся через Supabase CLI или MCP:
-
-```bash
-supabase functions deploy ocr
-supabase functions deploy explain
-supabase functions deploy speak
+# Загрузить содержимое dist/ в Yandex Cloud Object Storage bucket: reshaem-foundation
 ```
 
 ---
 
-## Структура проекта
+## Структура JSON от Макса
 
-```
-src/
-  App.jsx                  # основное приложение
-  App.css                  # глобальные стили
-  assets/
-    reshaem-logo.svg       # логотип (wordmark)
-    hero.png
-
-supabase/
-  functions/
-    ocr/index.ts           # Mathpix OCR
-    explain/index.ts       # Claude разбор + rephrase
-    speak/index.ts         # OpenAI TTS
-
-public/
-  favicon.svg
-
-claude_system_prompt.md    # системный промпт Макса (только для владельца продукта)
-design-system.md           # дизайн-система
+```json
+{
+  "message": "общий вердикт одной фразой",
+  "steps": [
+    {
+      "step_number": 1,
+      "is_correct": true,
+      "student_work": "что написал ученик",
+      "explanation": "комментарий Макса",
+      "correction": null
+    }
+  ],
+  "input_type": "solution | problem_only | unreadable",
+  "is_correct": true,
+  "topic": "алгебра | геометрия | ...",
+  "confidence_flag": "ok | ocr_uncertain",
+  "nudge_question": "наводящий вопрос или null"
+}
 ```
 
 ---
 
-## Лицензия
+## Дизайн-система
 
-Частный проект. Все права защищены.
+- Фон: Midnight `#0D0F1C`, Deep Navy `#1A1D2E`
+- Акцент (верно): Cyan Mint `#5EECD8`
+- Акцент (ошибка): Coral Rose `#FF6B6B`
+- Текст: Warm White `#F0EEE6`
+- Шрифт: Inter / системный sans-serif
+
+Подробнее: `design-system.md`
+
+---
+
+*Foundation Lab EdTech — 2026*

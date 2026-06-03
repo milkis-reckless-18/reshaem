@@ -543,7 +543,7 @@ function CameraScreen({ onUpload, history, historyLoading, onSelectSession }) {
       </header>
 
       {/* Hidden file inputs */}
-      <input ref={cameraInputRef}  type="file" accept="image/*" capture="environment"
+      <input ref={cameraInputRef}  type="file" accept="image/*"
         onChange={handleChange} style={{ display: "none" }} />
       <input ref={galleryInputRef} type="file" accept="image/*"
         onChange={handleChange} style={{ display: "none" }} />
@@ -826,7 +826,7 @@ function SessionSheet({ session, onClose }) {
                     Подумай
                   </div>
                   <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
-                    {detail.nudge_question}
+                    <MathDisplay text={detail.nudge_question} />
                   </p>
                 </div>
               </div>
@@ -967,7 +967,7 @@ function PracticeSheet({ topic, onUpload, onClose }) {
         </p>
 
         {/* Hidden inputs */}
-        <input ref={cameraRef}  type="file" accept="image/*" capture="environment"
+        <input ref={cameraRef}  type="file" accept="image/*"
           onChange={handleChange} style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*"
           onChange={handleChange} style={{ display: "none" }} />
@@ -1514,7 +1514,7 @@ function AnalysisScreen({ state, maxResponse, thumbnail, onReset, onUpload }) {
                         Подумай
                       </div>
                       <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-md)", color: "var(--color-text-primary)", margin: 0, lineHeight: "var(--leading-normal)", fontWeight: 500 }}>
-                        {maxResponse.nudge_question}
+                        <MathDisplay text={maxResponse.nudge_question} />
                       </p>
                     </div>
                   </div>
